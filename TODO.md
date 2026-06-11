@@ -8,12 +8,12 @@
 
 ### 1. 项目骨架
 
-- [ ] 初始化 Python 项目配置。
-- [ ] 建立 FastAPI app 入口。
-- [ ] 建立 Streamlit demo 入口。
-- [ ] 建立 `.env` 配置加载。
+- [x] 初始化 Python 项目配置。
+- [x] 建立 FastAPI app 入口。
+- [x] 建立 Streamlit demo 入口。
+- [x] 建立 `.env` 配置加载。
 - [ ] 建立 SQLite metadata repository 抽象。
-- [ ] 建立本地文件存储路径约定。
+- [x] 建立本地文件存储路径约定。
 
 ### 2. 论文上传与 hash 去重
 
