@@ -12,16 +12,16 @@
 - [x] 建立 FastAPI app 入口。
 - [x] 建立 Streamlit demo 入口。
 - [x] 建立 `.env` 配置加载。
-- [ ] 建立 SQLite metadata repository 抽象。
+- [x] 建立 SQLite metadata repository 抽象。
 - [x] 建立本地文件存储路径约定。
 
 ### 2. 论文上传与 hash 去重
 
-- [ ] 实现 PDF 上传接口。
-- [ ] 计算 SHA-256 `file_hash`。
-- [ ] 基于 hash 复用已有 `paper_id`。
-- [ ] 保存原始 PDF 到 `data/papers/`。
-- [ ] 记录 paper metadata 和处理状态。
+- [x] 实现 PDF 上传接口。
+- [x] 计算 SHA-256 `file_hash`。
+- [x] 基于 hash 复用已有 `paper_id`。
+- [x] 保存原始 PDF 到 `data/papers/`。
+- [x] 记录 paper metadata 和处理状态。
 
 ### 3. PDF 解析与文本清洗
 
@@ -41,7 +41,7 @@
 
 ### 5. GNN-specific Paper Card
 
-- [ ] 实现 Pydantic schema。
+- [x] 实现 Pydantic schema。
 - [ ] 设计结构化抽取 prompt。
 - [ ] 抽取 `task_type`、`graph_type`、`datasets`、`node_types`、`edge_types`。
 - [ ] 抽取 `model_modules`、`losses`、`attacks`、`defenses`。
