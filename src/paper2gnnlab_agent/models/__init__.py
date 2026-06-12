@@ -1,5 +1,11 @@
 """Pydantic models for Paper2GNNLab-Agent domain objects."""
 
+from paper2gnnlab_agent.models.chunk import (
+    Chunk,
+    ChunkListResponse,
+    GenerateChunksRequest,
+    GenerateChunksResponse,
+)
 from paper2gnnlab_agent.models.cleaned import (
     CleanedPaper,
     CleanedParagraph,
@@ -28,11 +34,15 @@ __all__ = [
     "CleanedParagraph",
     "CleanPaperRequest",
     "CleanPaperResponse",
+    "Chunk",
+    "ChunkListResponse",
     "Paper",
     "PaperArtifacts",
     "PaperDetailResponse",
     "PaperStatus",
     "PaperUploadResponse",
+    "GenerateChunksRequest",
+    "GenerateChunksResponse",
     "ParsedPage",
     "ParsedPaper",
     "ParsePaperRequest",

@@ -69,8 +69,10 @@ class Chunk(BaseModel):
     page_end: int
     section: str | None = None
     text: str
+    evidence_text: str
     token_count: int | None = None
     source_offsets: list[SourceOffset] = []
+    citation: Citation
     created_at: datetime
 
 class SourceOffset(BaseModel):
@@ -84,6 +86,12 @@ class SourceOffset(BaseModel):
 - `section` 应保留论文原始章节名；无法识别时可用 `unknown`。
 - `text` 是清洗后文本，不应包含大量参考文献噪声。
 - `source_offsets` 用于后续更精确 evidence 定位。
+
+Implementation notes:
+
+- `evidence_text` is the short citation snippet shown in answers and cards.
+- `citation` keeps the required `paper_id`, `chunk_id`, `page`, `section`, and evidence text.
+- Full chunk text is stored in `data/chunks/{paper_id}.jsonl`; SQLite stores metadata for lookup.
 
 ## 4. Citation
 

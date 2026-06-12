@@ -33,11 +33,11 @@
 
 ### 4. Chunk 与 citation 持久化
 
-- [ ] 设计 chunk 切分策略。
-- [ ] 生成稳定 `chunk_id`。
-- [ ] 保存 chunk JSONL 到 `data/chunks/`。
-- [ ] 写入 chunk metadata 到 SQLite。
-- [ ] 定义 citation evidence 截取策略。
+- [x] 设计 chunk 切分策略。
+- [x] 生成稳定 `chunk_id`。
+- [x] 保存 chunk JSONL 到 `data/chunks/`。
+- [x] 写入 chunk metadata 到 SQLite。
+- [x] 定义 citation evidence 截取策略。
 
 ### 5. GNN-specific Paper Card
 

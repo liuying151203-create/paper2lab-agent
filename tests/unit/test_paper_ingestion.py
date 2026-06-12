@@ -75,6 +75,9 @@ def test_parse_pdf_writes_page_text_cleans_text_and_reuses_artifacts(tmp_path: P
     parsed = service.parse_pdf(upload.paper_id)
     reused = service.parse_pdf(upload.paper_id)
     cleaned = service.clean_parsed_text(upload.paper_id)
+    chunked = service.generate_chunks(upload.paper_id, max_chars=120)
+    reused_chunks = service.generate_chunks(upload.paper_id)
+    listed_chunks = service.list_chunks(upload.paper_id)
     detail = service.get_paper_detail(upload.paper_id)
 
     assert parsed.status == "cleaned"
@@ -82,8 +85,15 @@ def test_parse_pdf_writes_page_text_cleans_text_and_reuses_artifacts(tmp_path: P
     assert parsed.reused is False
     assert reused.reused is True
     assert cleaned.reused is True
-    assert detail.status == "cleaned"
+    assert chunked.status == "chunked"
+    assert chunked.chunks_count >= 1
+    assert reused_chunks.reused is True
+    assert listed_chunks.total == chunked.chunks_count
+    assert listed_chunks.items[0].citation.paper_id == upload.paper_id
+    assert detail.status == "chunked"
     assert detail.artifacts.parsed is True
     assert detail.artifacts.cleaned is True
+    assert detail.artifacts.chunks is True
     assert (paths.parsed_dir / f"{upload.paper_id}.json").exists()
     assert (paths.cleaned_dir / f"{upload.paper_id}.json").exists()
+    assert (paths.chunks_dir / f"{upload.paper_id}.jsonl").exists()

@@ -21,6 +21,23 @@ CREATE TABLE IF NOT EXISTS papers (
 );
 
 CREATE INDEX IF NOT EXISTS idx_papers_file_hash ON papers(file_hash);
+
+CREATE TABLE IF NOT EXISTS chunks (
+    chunk_id TEXT PRIMARY KEY,
+    paper_id TEXT NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    page_start INTEGER NOT NULL,
+    page_end INTEGER NOT NULL,
+    section TEXT,
+    text_path TEXT NOT NULL,
+    evidence_text TEXT NOT NULL,
+    token_count INTEGER,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (paper_id) REFERENCES papers(paper_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_chunks_paper_id ON chunks(paper_id);
+CREATE INDEX IF NOT EXISTS idx_chunks_paper_section ON chunks(paper_id, section);
 """
 
 
@@ -29,6 +46,7 @@ def connect(sqlite_path: Path) -> sqlite3.Connection:
 
     sqlite_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(sqlite_path)
+    connection.execute("PRAGMA foreign_keys = ON")
     connection.row_factory = sqlite3.Row
     return connection
 

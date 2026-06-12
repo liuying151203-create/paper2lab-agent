@@ -168,6 +168,39 @@
 
 ## 7. 获取 Chunks
 
+### `POST /api/v1/papers/{paper_id}/chunks`
+
+用途：基于 cleaned paragraphs 生成 citation-ready chunks，并保存 JSONL 与 SQLite metadata。
+
+请求：
+
+```json
+{
+  "force": false,
+  "max_chars": 1800
+}
+```
+
+响应：
+
+```json
+{
+  "paper_id": "paper_a1b2c3d4",
+  "status": "chunked",
+  "chunks_count": 128,
+  "reused": false
+}
+```
+
+行为：
+
+- 读取 `data/cleaned/{paper_id}.json`。
+- 输出 `data/chunks/{paper_id}.jsonl`。
+- 每个 chunk 生成稳定 `chunk_id`。
+- 每个 chunk 带 `paper_id`、`chunk_id`、页码、章节、`evidence_text` citation metadata。
+- SQLite 保存 chunk metadata，完整 chunk text 保留在 JSONL 文件中。
+- 若论文尚未清洗，返回 `409`。
+
 ### `GET /api/v1/papers/{paper_id}/chunks`
 
 用途：查看论文 chunks 和 citation 元数据，用于调试与 UI 展示。
@@ -194,7 +227,15 @@ Query：
       "page_end": 3,
       "section": "Method",
       "text": "The proposed GNN module...",
-      "token_count": 512
+      "evidence_text": "The proposed GNN module...",
+      "token_count": 512,
+      "citation": {
+        "paper_id": "paper_a1b2c3d4",
+        "chunk_id": "chunk_a1b2c3d4_0001",
+        "page": 2,
+        "section": "Method",
+        "evidence_text": "The proposed GNN module..."
+      }
     }
   ]
 }

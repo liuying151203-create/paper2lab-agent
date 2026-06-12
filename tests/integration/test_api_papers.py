@@ -83,3 +83,18 @@ def test_api_upload_reuse_and_get_paper(tmp_path: Path) -> None:
     assert clean.status_code == 200
     assert clean.json()["reused"] is True
     assert clean.json()["paragraphs_count"] == 1
+
+    chunked = client.post(
+        f"/api/v1/papers/{payload['paper_id']}/chunks",
+        json={"force": False, "max_chars": 200},
+    )
+    assert chunked.status_code == 200
+    assert chunked.json()["status"] == "chunked"
+    assert chunked.json()["chunks_count"] == 1
+
+    chunks = client.get(f"/api/v1/papers/{payload['paper_id']}/chunks")
+    assert chunks.status_code == 200
+    chunks_payload = chunks.json()
+    assert chunks_payload["total"] == 1
+    assert chunks_payload["items"][0]["paper_id"] == payload["paper_id"]
+    assert chunks_payload["items"][0]["citation"]["paper_id"] == payload["paper_id"]

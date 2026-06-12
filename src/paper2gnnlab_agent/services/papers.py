@@ -5,6 +5,11 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+from paper2gnnlab_agent.models.chunk import (
+    Chunk,
+    ChunkListResponse,
+    GenerateChunksResponse,
+)
 from paper2gnnlab_agent.models.cleaned import CleanedPaper, CleanPaperResponse
 from paper2gnnlab_agent.models.paper import (
     Paper,
@@ -13,8 +18,10 @@ from paper2gnnlab_agent.models.paper import (
     PaperUploadResponse,
 )
 from paper2gnnlab_agent.models.parsed import ParsedPaper, ParsePaperResponse
+from paper2gnnlab_agent.parsers.chunking import TextChunker
 from paper2gnnlab_agent.parsers.cleaning import TextCleaner
 from paper2gnnlab_agent.parsers.pdf import PdfParser, PdfParsingError, PypdfParser
+from paper2gnnlab_agent.storage.chunk_repository import ChunkRepository
 from paper2gnnlab_agent.storage.paper_repository import PaperRepository
 from paper2gnnlab_agent.storage.paths import StoragePaths
 
@@ -36,11 +43,13 @@ class PaperIngestionService:
         paths: StoragePaths,
         parser: PdfParser | None = None,
         cleaner: TextCleaner | None = None,
+        chunk_repository: ChunkRepository | None = None,
     ) -> None:
         self.repository = repository
         self.paths = paths
         self.parser = parser or PypdfParser()
         self.cleaner = cleaner or TextCleaner()
+        self.chunk_repository = chunk_repository or ChunkRepository(repository.sqlite_path)
 
     def upload_pdf(self, filename: str, content: bytes) -> PaperUploadResponse:
         """Persist a new PDF or reuse an existing paper by SHA-256 hash."""
@@ -187,6 +196,75 @@ class PaperIngestionService:
             reused=False,
         )
 
+    def generate_chunks(
+        self,
+        paper_id: str,
+        force: bool = False,
+        max_chars: int = 1800,
+    ) -> GenerateChunksResponse:
+        """Generate citation-ready chunks from cleaned paragraph text."""
+
+        paper = self.repository.get_by_id(paper_id)
+        if paper is None:
+            raise PaperNotFoundError(paper_id)
+
+        chunks_path = self._chunks_path(paper_id)
+        if chunks_path.exists() and not force:
+            chunks = _read_chunks(chunks_path)
+            return GenerateChunksResponse(
+                paper_id=paper_id,
+                status=paper.status,
+                chunks_count=len(chunks),
+                reused=True,
+            )
+
+        cleaned_path = self._cleaned_path(paper_id)
+        if not cleaned_path.exists():
+            raise CleanedArtifactNotFoundError(paper_id)
+
+        cleaned = _read_cleaned_paper(cleaned_path)
+        chunks = TextChunker(max_chars=max_chars).chunk(paper_id, cleaned.paragraphs)
+        self.paths.chunks_dir.mkdir(parents=True, exist_ok=True)
+        _write_chunks(chunks_path, chunks)
+        self.chunk_repository.replace_for_paper(paper_id, chunks, chunks_path)
+        updated = self.repository.update_status(paper_id, "chunked")
+        return GenerateChunksResponse(
+            paper_id=paper_id,
+            status=updated.status if updated else "chunked",
+            chunks_count=len(chunks),
+            reused=False,
+        )
+
+    def list_chunks(
+        self,
+        paper_id: str,
+        section: str | None = None,
+        page: int | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> ChunkListResponse:
+        """Return chunks with full text loaded from JSONL storage."""
+
+        if self.repository.get_by_id(paper_id) is None:
+            raise PaperNotFoundError(paper_id)
+
+        chunks_path = self._chunks_path(paper_id)
+        if not chunks_path.exists():
+            raise ChunksArtifactNotFoundError(paper_id)
+
+        chunks = _read_chunks(chunks_path)
+        filtered = [
+            chunk
+            for chunk in chunks
+            if (section is None or chunk.section == section)
+            and (page is None or chunk.page_start <= page <= chunk.page_end)
+        ]
+        return ChunkListResponse(
+            paper_id=paper_id,
+            total=len(filtered),
+            items=filtered[offset : offset + limit],
+        )
+
     @staticmethod
     def _validate_pdf(filename: str, content: bytes) -> None:
         if not filename.lower().endswith(".pdf"):
@@ -199,6 +277,9 @@ class PaperIngestionService:
 
     def _cleaned_path(self, paper_id: str) -> Path:
         return self.paths.cleaned_dir / f"{paper_id}.json"
+
+    def _chunks_path(self, paper_id: str) -> Path:
+        return self.paths.chunks_dir / f"{paper_id}.jsonl"
 
 
 def compute_file_hash(content: bytes) -> str:
@@ -218,6 +299,7 @@ def build_paper_service(
     paths: StoragePaths,
     parser: PdfParser | None = None,
     cleaner: TextCleaner | None = None,
+    chunk_repository: ChunkRepository | None = None,
 ) -> PaperIngestionService:
     """Factory used by API dependencies and tests."""
 
@@ -226,6 +308,7 @@ def build_paper_service(
         paths=paths,
         parser=parser,
         cleaner=cleaner,
+        chunk_repository=chunk_repository,
     )
 
 
@@ -251,5 +334,28 @@ def _sections_from_cleaned(cleaned: CleanedPaper) -> list[str]:
     return sorted({paragraph.section for paragraph in cleaned.paragraphs})
 
 
+def _write_chunks(path: Path, chunks: list[Chunk]) -> None:
+    path.write_text(
+        "\n".join(chunk.model_dump_json() for chunk in chunks) + ("\n" if chunks else ""),
+        encoding="utf-8",
+    )
+
+
+def _read_chunks(path: Path) -> list[Chunk]:
+    return [
+        Chunk.model_validate(json.loads(line))
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
 class ParsedArtifactNotFoundError(ValueError):
     """Raised when cleaning is requested before PDF parsing has produced text."""
+
+
+class CleanedArtifactNotFoundError(ValueError):
+    """Raised when chunking is requested before cleaning has produced text."""
+
+
+class ChunksArtifactNotFoundError(ValueError):
+    """Raised when chunks are requested before chunking has produced text."""

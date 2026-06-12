@@ -7,11 +7,18 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from paper2gnnlab_agent import __version__
 from paper2gnnlab_agent.api.dependencies import get_app_settings, get_paper_service
 from paper2gnnlab_agent.core.config import Settings
+from paper2gnnlab_agent.models.chunk import (
+    ChunkListResponse,
+    GenerateChunksRequest,
+    GenerateChunksResponse,
+)
 from paper2gnnlab_agent.models.cleaned import CleanPaperRequest, CleanPaperResponse
 from paper2gnnlab_agent.models.paper import PaperDetailResponse, PaperUploadResponse
 from paper2gnnlab_agent.models.parsed import ParsePaperRequest, ParsePaperResponse
 from paper2gnnlab_agent.parsers.pdf import PdfParsingError
 from paper2gnnlab_agent.services.papers import (
+    ChunksArtifactNotFoundError,
+    CleanedArtifactNotFoundError,
     InvalidPaperUploadError,
     PaperIngestionService,
     PaperNotFoundError,
@@ -102,4 +109,57 @@ def clean_paper(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Paper must be parsed before cleaning.",
+        ) from exc
+
+
+@router.post("/papers/{paper_id}/chunks", response_model=GenerateChunksResponse, tags=["papers"])
+def generate_chunks(
+    paper_id: str,
+    request: GenerateChunksRequest,
+    service: PaperServiceDep,
+) -> GenerateChunksResponse:
+    try:
+        return service.generate_chunks(
+            paper_id=paper_id,
+            force=request.force,
+            max_chars=request.max_chars,
+        )
+    except PaperNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Paper not found.",
+        ) from exc
+    except CleanedArtifactNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Paper must be cleaned before chunking.",
+        ) from exc
+
+
+@router.get("/papers/{paper_id}/chunks", response_model=ChunkListResponse, tags=["papers"])
+def list_chunks(
+    paper_id: str,
+    service: PaperServiceDep,
+    section: str | None = None,
+    page: int | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> ChunkListResponse:
+    try:
+        return service.list_chunks(
+            paper_id=paper_id,
+            section=section,
+            page=page,
+            limit=limit,
+            offset=offset,
+        )
+    except PaperNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Paper not found.",
+        ) from exc
+    except ChunksArtifactNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chunks not found.",
         ) from exc
