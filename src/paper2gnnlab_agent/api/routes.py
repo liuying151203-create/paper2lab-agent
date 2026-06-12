@@ -17,6 +17,10 @@ from paper2gnnlab_agent.models.chunk import (
     GenerateChunksResponse,
 )
 from paper2gnnlab_agent.models.cleaned import CleanPaperRequest, CleanPaperResponse
+from paper2gnnlab_agent.models.comparison import (
+    PaperComparisonRequest,
+    PaperComparisonResponse,
+)
 from paper2gnnlab_agent.models.paper import PaperDetailResponse, PaperUploadResponse
 from paper2gnnlab_agent.models.parsed import ParsePaperRequest, ParsePaperResponse
 from paper2gnnlab_agent.models.qa import PaperQARequest, PaperQAResponse
@@ -35,6 +39,28 @@ router = APIRouter(prefix="/api/v1")
 SettingsDep = Annotated[Settings, Depends(get_app_settings)]
 PaperServiceDep = Annotated[PaperIngestionService, Depends(get_paper_service)]
 PdfUpload = Annotated[UploadFile, File()]
+
+
+@router.post("/comparisons", response_model=PaperComparisonResponse, tags=["comparisons"])
+def compare_papers(
+    request: PaperComparisonRequest,
+    service: PaperServiceDep,
+) -> PaperComparisonResponse:
+    try:
+        return service.compare_papers(
+            paper_ids=request.paper_ids,
+            dimensions=request.dimensions,
+        )
+    except PaperNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Paper not found.",
+        ) from exc
+    except CardArtifactNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="All papers must have generated PaperCards before comparison.",
+        ) from exc
 
 
 @router.get("/health", tags=["health"])

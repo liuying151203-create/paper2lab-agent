@@ -128,3 +128,37 @@ def test_api_upload_reuse_and_get_paper(tmp_path: Path) -> None:
     assert qa_payload["paper_id"] == payload["paper_id"]
     assert qa_payload["unsupported_claims"] == []
     assert qa_payload["citations"][0]["paper_id"] == payload["paper_id"]
+
+    second_upload = client.post(
+        "/api/v1/papers",
+        files={"file": ("paper-2.pdf", b"%PDF-1.4\nminimal test pdf 2\n", "application/pdf")},
+    )
+    assert second_upload.status_code == 201
+    second_payload = second_upload.json()
+    assert second_payload["paper_id"] != payload["paper_id"]
+    assert client.post(
+        f"/api/v1/papers/{second_payload['paper_id']}/parse",
+        json={"force": False},
+    ).status_code == 200
+    assert client.post(
+        f"/api/v1/papers/{second_payload['paper_id']}/chunks",
+        json={"force": False, "max_chars": 200},
+    ).status_code == 200
+    assert client.post(
+        f"/api/v1/papers/{second_payload['paper_id']}/card",
+        json={"force": False},
+    ).status_code == 200
+
+    comparison = client.post(
+        "/api/v1/comparisons",
+        json={
+            "paper_ids": [payload["paper_id"], second_payload["paper_id"]],
+            "dimensions": ["task_type", "datasets", "metrics"],
+        },
+    )
+    assert comparison.status_code == 200
+    comparison_payload = comparison.json()
+    assert comparison_payload["dimensions"] == ["task_type", "datasets", "metrics"]
+    assert len(comparison_payload["rows"]) == 2
+    assert comparison_payload["citations"]
+    assert "Compared 2 papers" in comparison_payload["summary"]

@@ -295,4 +295,8 @@ class PaperComparisonResponse(BaseModel):
     citations: list[Citation]
 ```
 
-Comparison 属于 Phase 2，不进入 MVP 第一批实现。
+说明：
+
+- Comparison 基于已生成的 `PaperCard`，不会隐式触发 PDF 解析、chunk 或 card 生成。
+- `values` 中每个维度保留原 PaperCard 的 `CitedValue`，用于追溯证据。
+- `reproduction_difficulty` 会转换为一个 `CitedValue`，其 citations 来自 difficulty reasons。

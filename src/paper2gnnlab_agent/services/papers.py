@@ -12,6 +12,7 @@ from paper2gnnlab_agent.models.chunk import (
     GenerateChunksResponse,
 )
 from paper2gnnlab_agent.models.cleaned import CleanedPaper, CleanPaperResponse
+from paper2gnnlab_agent.models.comparison import PaperComparisonResponse
 from paper2gnnlab_agent.models.paper import (
     Paper,
     PaperArtifacts,
@@ -28,6 +29,7 @@ from paper2gnnlab_agent.services.card_extraction import (
     PaperCardExtractor,
     RuleBasedPaperCardExtractor,
 )
+from paper2gnnlab_agent.services.comparison import PaperComparisonService
 from paper2gnnlab_agent.services.llm import OpenAICompatibleChatClient
 from paper2gnnlab_agent.services.qa import ChunkQAService, LlmAnswerComposer
 from paper2gnnlab_agent.storage.chunk_repository import ChunkRepository
@@ -55,6 +57,7 @@ class PaperIngestionService:
         chunk_repository: ChunkRepository | None = None,
         card_extractor: PaperCardExtractor | None = None,
         qa_service: ChunkQAService | None = None,
+        comparison_service: PaperComparisonService | None = None,
     ) -> None:
         self.repository = repository
         self.paths = paths
@@ -63,6 +66,7 @@ class PaperIngestionService:
         self.chunk_repository = chunk_repository or ChunkRepository(repository.sqlite_path)
         self.card_extractor = card_extractor or RuleBasedPaperCardExtractor()
         self.qa_service = qa_service or ChunkQAService()
+        self.comparison_service = comparison_service or PaperComparisonService()
 
     def upload_pdf(self, filename: str, content: bytes) -> PaperUploadResponse:
         """Persist a new PDF or reuse an existing paper by SHA-256 hash."""
@@ -346,6 +350,23 @@ class PaperIngestionService:
             top_k=top_k,
         )
 
+    def compare_papers(
+        self,
+        paper_ids: list[str],
+        dimensions: list[str] | None = None,
+    ) -> PaperComparisonResponse:
+        """Compare generated PaperCards for multiple GNN papers."""
+
+        cards: list[PaperCard] = []
+        for paper_id in paper_ids:
+            if self.repository.get_by_id(paper_id) is None:
+                raise PaperNotFoundError(paper_id)
+            card_path = self._card_path(paper_id)
+            if not card_path.exists():
+                raise CardArtifactNotFoundError(paper_id)
+            cards.append(_read_paper_card(card_path))
+        return self.comparison_service.compare(cards=cards, dimensions=dimensions)
+
     @staticmethod
     def _validate_pdf(filename: str, content: bytes) -> None:
         if not filename.lower().endswith(".pdf"):
@@ -386,6 +407,7 @@ def build_paper_service(
     chunk_repository: ChunkRepository | None = None,
     card_extractor: PaperCardExtractor | None = None,
     qa_service: ChunkQAService | None = None,
+    comparison_service: PaperComparisonService | None = None,
 ) -> PaperIngestionService:
     """Factory used by API dependencies and tests."""
 
@@ -397,6 +419,7 @@ def build_paper_service(
         chunk_repository=chunk_repository,
         card_extractor=card_extractor,
         qa_service=qa_service,
+        comparison_service=comparison_service,
     )
 
 

@@ -19,6 +19,11 @@ from paper2gnnlab_agent.models.cleaned import (
     CleanPaperResponse,
 )
 from paper2gnnlab_agent.models.common import Citation, CitedValue, SourceOffset
+from paper2gnnlab_agent.models.comparison import (
+    PaperComparisonRequest,
+    PaperComparisonResponse,
+    PaperComparisonRow,
+)
 from paper2gnnlab_agent.models.paper import (
     Paper,
     PaperArtifacts,
@@ -47,6 +52,9 @@ __all__ = [
     "PaperArtifacts",
     "PaperCard",
     "PaperCardResponse",
+    "PaperComparisonRequest",
+    "PaperComparisonResponse",
+    "PaperComparisonRow",
     "PaperDetailResponse",
     "PaperQARequest",
     "PaperQAResponse",

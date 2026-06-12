@@ -354,13 +354,67 @@ Query：
 - 如果找不到足够证据，返回说明性回答并填充 `unsupported_claims`。
 - 若论文尚未 chunk，返回 `409`。
 
-## 10. Phase 2 预留接口
+## 10. 多论文对比
 
-- `POST /api/v1/comparisons`：多论文横向对比。
+### `POST /api/v1/comparisons`
+
+用途：基于已生成的 GNN PaperCard 做多论文横向对比。
+
+请求：
+
+```json
+{
+  "paper_ids": ["paper_a1b2c3d4", "paper_e5f6g7h8"],
+  "dimensions": ["task_type", "datasets", "model_modules", "metrics", "baselines"]
+}
+```
+
+响应：
+
+```json
+{
+  "dimensions": ["task_type", "datasets", "model_modules", "metrics", "baselines"],
+  "rows": [
+    {
+      "paper_id": "paper_a1b2c3d4",
+      "values": {
+        "datasets": [
+          {
+            "value": "Cora",
+            "confidence": "medium",
+            "citations": [
+              {
+                "paper_id": "paper_a1b2c3d4",
+                "chunk_id": "chunk_a1b2c3d4_0003",
+                "page": 3,
+                "section": "experiments",
+                "evidence_text": "..."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "summary": "Compared 2 papers across 5 dimensions. Shared datasets: Cora.",
+  "citations": []
+}
+```
+
+行为：
+
+- 只读取 `data/cards/{paper_id}.json`。
+- 不隐式触发 parse、chunk 或 PaperCard 生成。
+- 若任一 paper 不存在，返回 `404`。
+- 若任一 paper 尚未生成 PaperCard，返回 `409`。
+- 不支持的 dimensions 会被忽略；若全部无效，则使用默认对比维度。
+
+## 11. Phase 2 预留接口
+
 - `POST /api/v1/papers/{paper_id}/reproduction-plan`：生成复现 checklist。
 - `POST /api/v1/papers/{paper_id}/method-spec`：生成 `method_spec.yaml`。
 
-## 11. Phase 3 预留接口
+## 12. Phase 3 预留接口
 
 - `POST /api/v1/method-specs/{spec_id}/scaffold`：基于模板生成实验项目骨架。
 - `POST /api/v1/graphrag/search`：可选 GraphRAG 联动检索。

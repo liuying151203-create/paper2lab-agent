@@ -85,11 +85,11 @@
 
 ### 1. 多论文对比
 
-- [ ] 基于 PaperCard 设计 comparison service。
-- [ ] 支持按 `task_type`、`graph_type`、`datasets`、`metrics` 对比。
-- [ ] 支持按 `attacks`、`defenses`、`baselines` 对比。
-- [ ] 输出横向对比表和 summary。
-- [ ] 保留每个结论的 citations。
+- [x] 基于 PaperCard 设计 comparison service。
+- [x] 支持按 `task_type`、`graph_type`、`datasets`、`metrics` 对比。
+- [x] 支持按 `attacks`、`defenses`、`baselines` 对比。
+- [x] 输出横向对比表和 summary。
+- [x] 保留每个结论的 citations。
 
 ### 2. 复现 checklist
 
