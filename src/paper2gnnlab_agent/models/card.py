@@ -39,3 +39,18 @@ class PaperCard(BaseModel):
     reproduction_difficulty: ReproductionDifficulty
     missing_implementation_details: list[CitedValue] = Field(default_factory=list)
     generated_at: datetime
+
+
+class GeneratePaperCardRequest(BaseModel):
+    """Request body for generating a GNN-specific paper card."""
+
+    force: bool = False
+
+
+class PaperCardResponse(BaseModel):
+    """Response returned after generating or reading a paper card."""
+
+    paper_id: str
+    status: Literal["card_ready"]
+    card: PaperCard
+    reused: bool = False

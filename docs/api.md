@@ -261,6 +261,7 @@ Query：
 {
   "paper_id": "paper_a1b2c3d4",
   "status": "card_ready",
+  "reused": false,
   "card": {
     "paper_id": "paper_a1b2c3d4",
     "task_type": [
@@ -287,6 +288,14 @@ Query：
   }
 }
 ```
+
+行为：
+
+- MVP 先使用规则版抽取器，从 chunks 中抽取 GNN 垂直字段并附带 citations。
+- 输出保存到 `data/cards/{paper_id}.json`。
+- 生成成功后 `Paper.status` 更新为 `card_ready`。
+- 若 `force=false` 且 card artifact 已存在，则直接复用。
+- 若论文尚未 chunk，返回 `409`。
 
 ### `GET /api/v1/papers/{paper_id}/card`
 

@@ -1,0 +1,383 @@
+"""Rule-based GNN paper card extraction from citation-ready chunks."""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Iterable
+from datetime import UTC, datetime
+
+from paper2gnnlab_agent.models.card import PaperCard, ReproductionDifficulty
+from paper2gnnlab_agent.models.chunk import Chunk
+from paper2gnnlab_agent.models.common import Citation, CitedValue
+
+
+class RuleBasedPaperCardExtractor:
+    """Extract a conservative GNN-specific paper card without external model calls."""
+
+    name = "rule_based"
+
+    def extract(self, paper_id: str, chunks: list[Chunk]) -> PaperCard:
+        """Build a citation-backed paper card from available chunks."""
+
+        return PaperCard(
+            paper_id=paper_id,
+            title=None,
+            problem=_extract_problem(chunks),
+            task_type=_extract_keyword_values(chunks, TASK_PATTERNS),
+            graph_type=_extract_keyword_values(chunks, GRAPH_PATTERNS),
+            datasets=_extract_keyword_values(chunks, DATASET_PATTERNS),
+            node_types=_extract_list_after_label(chunks, r"node types?\s*(?:are|:)\s*([^.;\n]+)"),
+            edge_types=_extract_list_after_label(chunks, r"edge types?\s*(?:are|:)\s*([^.;\n]+)"),
+            model_modules=_extract_keyword_values(chunks, MODEL_PATTERNS),
+            losses=_extract_keyword_values(chunks, LOSS_PATTERNS),
+            attacks=_extract_keyword_values(chunks, ATTACK_PATTERNS),
+            defenses=_extract_keyword_values(chunks, DEFENSE_PATTERNS),
+            metrics=_extract_keyword_values(chunks, METRIC_PATTERNS),
+            baselines=_extract_keyword_values(chunks, BASELINE_PATTERNS),
+            training_setup=_extract_training_setup(chunks),
+            evaluation_protocol=_extract_keyword_values(chunks, EVALUATION_PATTERNS),
+            main_results=_extract_sentences(chunks, RESULT_TERMS, limit=3),
+            limitations=_extract_sentences(chunks, LIMITATION_TERMS, limit=3),
+            reproduction_difficulty=_estimate_reproduction_difficulty(chunks),
+            missing_implementation_details=_extract_missing_details(chunks),
+            generated_at=datetime.now(UTC),
+        )
+
+
+TASK_PATTERNS = {
+    "node classification": [r"\bnode classification\b"],
+    "graph classification": [r"\bgraph classification\b"],
+    "link prediction": [r"\blink prediction\b"],
+    "recommendation": [r"\brecommendation\b", r"\brecommender\b"],
+    "graph regression": [r"\bgraph regression\b"],
+    "anomaly detection": [r"\banomaly detection\b"],
+    "robustness evaluation": [r"\brobust(?:ness)?\b", r"\badversarial\b"],
+}
+
+GRAPH_PATTERNS = {
+    "homogeneous graph": [r"\bhomogeneous graph\b"],
+    "heterogeneous graph": [r"\bheterogeneous graph\b", r"\bheterograph\b"],
+    "dynamic graph": [r"\bdynamic graph\b", r"\btemporal graph\b"],
+    "knowledge graph": [r"\bknowledge graph\b"],
+    "bipartite graph": [r"\bbipartite graph\b"],
+    "attributed graph": [r"\battributed graph\b"],
+}
+
+DATASET_PATTERNS = {
+    "Cora": [r"\bCora\b"],
+    "Citeseer": [r"\bCiteSeer\b", r"\bCiteseer\b"],
+    "PubMed": [r"\bPubMed\b"],
+    "ogbn-arxiv": [r"\bogbn-arxiv\b"],
+    "ogbn-products": [r"\bogbn-products\b"],
+    "PPI": [r"\bPPI\b"],
+    "Reddit": [r"\bReddit\b"],
+    "Amazon": [r"\bAmazon\b"],
+    "Yelp": [r"\bYelp\b"],
+    "MovieLens": [r"\bMovieLens\b"],
+    "MUTAG": [r"\bMUTAG\b"],
+    "PROTEINS": [r"\bPROTEINS\b"],
+    "NCI1": [r"\bNCI1\b"],
+}
+
+MODEL_PATTERNS = {
+    "GCN": [r"\bGCN\b", r"\bgraph convolutional network\b"],
+    "GAT": [r"\bGAT\b", r"\bgraph attention network\b"],
+    "GraphSAGE": [r"\bGraphSAGE\b"],
+    "GIN": [r"\bGIN\b", r"\bgraph isomorphism network\b"],
+    "R-GCN": [r"\bR-GCN\b", r"\brelational graph convolutional network\b"],
+    "HGT": [r"\bHGT\b", r"\bheterogeneous graph transformer\b"],
+    "message passing": [r"\bmessage passing\b"],
+    "attention": [r"\battention\b"],
+}
+
+LOSS_PATTERNS = {
+    "cross entropy": [r"\bcross[- ]entropy\b"],
+    "negative log likelihood": [r"\bnegative log[- ]likelihood\b", r"\bNLL\b"],
+    "contrastive loss": [r"\bcontrastive loss\b"],
+    "margin loss": [r"\bmargin loss\b"],
+    "regularization": [r"\bregularization\b", r"\bregularizer\b"],
+}
+
+ATTACK_PATTERNS = {
+    "adversarial attack": [r"\badversarial attack\b"],
+    "poisoning attack": [r"\bpoisoning\b"],
+    "evasion attack": [r"\bevasion\b"],
+    "structure perturbation": [r"\bstructure perturbation\b", r"\bedge perturbation\b"],
+    "feature perturbation": [r"\bfeature perturbation\b"],
+}
+
+DEFENSE_PATTERNS = {
+    "adversarial training": [r"\badversarial training\b"],
+    "robust aggregation": [r"\brobust aggregation\b"],
+    "graph purification": [r"\bgraph purification\b"],
+    "certified defense": [r"\bcertified\b", r"\bcertifiable\b"],
+}
+
+METRIC_PATTERNS = {
+    "accuracy": [r"\baccuracy\b", r"\bACC\b"],
+    "F1": [r"\bF1\b", r"\bF1-score\b"],
+    "AUC": [r"\bAUC\b", r"\bROC-AUC\b"],
+    "AP": [r"\baverage precision\b", r"\bAP\b"],
+    "MRR": [r"\bMRR\b"],
+    "Hits@K": [r"\bHits@\d+\b", r"\bHits@K\b"],
+    "NMI": [r"\bNMI\b"],
+}
+
+BASELINE_PATTERNS = {
+    "GCN": [r"\bGCN\b"],
+    "GAT": [r"\bGAT\b"],
+    "GraphSAGE": [r"\bGraphSAGE\b"],
+    "GIN": [r"\bGIN\b"],
+    "MLP": [r"\bMLP\b"],
+    "DeepWalk": [r"\bDeepWalk\b"],
+    "node2vec": [r"\bnode2vec\b"],
+}
+
+EVALUATION_PATTERNS = {
+    "transductive setting": [r"\btransductive\b"],
+    "inductive setting": [r"\binductive\b"],
+    "train/validation/test split": [r"\btrain(?:ing)?/validation/test\b", r"\btrain/val/test\b"],
+    "ablation study": [r"\bablation\b"],
+}
+
+TRAINING_PATTERNS = {
+    "Adam optimizer": [r"\bAdam\b"],
+    "SGD optimizer": [r"\bSGD\b"],
+    "learning rate": [r"\blearning rate\b", r"\blr\s*[=:]\s*\d"],
+    "epochs": [r"\bepochs?\b"],
+    "batch size": [r"\bbatch size\b"],
+    "dropout": [r"\bdropout\b"],
+    "weight decay": [r"\bweight decay\b"],
+}
+
+RESULT_TERMS = (
+    "outperform",
+    "state-of-the-art",
+    "state of the art",
+    "improve",
+    "achieve",
+    "result",
+    "performance",
+)
+LIMITATION_TERMS = ("limitation", "future work", "fail", "cannot", "does not", "scalability")
+
+
+def _extract_keyword_values(
+    chunks: Iterable[Chunk],
+    patterns: dict[str, list[str]],
+) -> list[CitedValue]:
+    values: list[CitedValue] = []
+    seen: set[str] = set()
+    for value, regexes in patterns.items():
+        citation = _first_matching_citation(chunks, regexes)
+        if citation is not None and value.lower() not in seen:
+            values.append(CitedValue(value=value, citations=[citation], confidence="medium"))
+            seen.add(value.lower())
+    return values
+
+
+def _extract_problem(chunks: list[Chunk]) -> CitedValue | None:
+    candidates = [
+        chunk
+        for chunk in chunks
+        if chunk.section in {"abstract", "introduction", "unknown"}
+    ] or chunks
+    for chunk in candidates:
+        sentence = _first_sentence_with(
+            chunk.text,
+            ("propose", "study", "address", "problem", "challenge", "introduce"),
+        )
+        if sentence:
+            return CitedValue(
+                value=sentence,
+                citations=[_citation_with_evidence(chunk, sentence)],
+                confidence="low",
+            )
+    return None
+
+
+def _extract_list_after_label(chunks: Iterable[Chunk], pattern: str) -> list[CitedValue]:
+    values: list[CitedValue] = []
+    seen: set[str] = set()
+    regex = re.compile(pattern, re.IGNORECASE)
+    for chunk in chunks:
+        match = regex.search(chunk.text)
+        if match is None:
+            continue
+        for raw_value in re.split(r",| and |/", match.group(1)):
+            value = raw_value.strip(" .;:()[]")
+            if not value or value.lower() in seen:
+                continue
+            values.append(
+                CitedValue(
+                    value=value,
+                    citations=[_citation_with_evidence(chunk, match.group(0))],
+                    confidence="medium",
+                )
+            )
+            seen.add(value.lower())
+    return values[:8]
+
+
+def _extract_training_setup(chunks: list[Chunk]) -> list[CitedValue]:
+    values = _extract_keyword_values(chunks, TRAINING_PATTERNS)
+    lr_values = _extract_regex_values(chunks, r"\b(?:learning rate|lr)\s*[=:]?\s*([0-9.]+e?-?\d*)")
+    epoch_values = _extract_regex_values(chunks, r"\b(\d+)\s+epochs?\b")
+    return _dedupe_values([*values, *lr_values, *epoch_values])
+
+
+def _extract_regex_values(chunks: Iterable[Chunk], pattern: str) -> list[CitedValue]:
+    values: list[CitedValue] = []
+    regex = re.compile(pattern, re.IGNORECASE)
+    for chunk in chunks:
+        match = regex.search(chunk.text)
+        if match is None:
+            continue
+        values.append(
+            CitedValue(
+                value=match.group(0),
+                citations=[_citation_with_evidence(chunk, match.group(0))],
+                confidence="medium",
+            )
+        )
+    return values
+
+
+def _extract_sentences(
+    chunks: Iterable[Chunk],
+    terms: tuple[str, ...],
+    limit: int,
+) -> list[CitedValue]:
+    values: list[CitedValue] = []
+    seen: set[str] = set()
+    for chunk in chunks:
+        sentence = _first_sentence_with(chunk.text, terms)
+        if sentence and sentence.lower() not in seen:
+            values.append(
+                CitedValue(
+                    value=sentence,
+                    citations=[_citation_with_evidence(chunk, sentence)],
+                    confidence="low",
+                )
+            )
+            seen.add(sentence.lower())
+        if len(values) >= limit:
+            break
+    return values
+
+
+def _extract_missing_details(chunks: list[Chunk]) -> list[CitedValue]:
+    missing: list[CitedValue] = []
+    anchor = _first_section_citation(chunks, {"method", "experiments", "results"}) or (
+        chunks[0].citation if chunks else None
+    )
+    if not chunks:
+        return missing
+
+    checks = [
+        ("training hyperparameters are not explicit in available chunks", TRAINING_PATTERNS),
+        ("dataset split details are not explicit in available chunks", EVALUATION_PATTERNS),
+    ]
+    for message, patterns in checks:
+        if not _has_any_pattern(chunks, patterns):
+            missing.append(
+                CitedValue(
+                    value=message,
+                    citations=[anchor] if anchor is not None else [],
+                    confidence="low",
+                )
+            )
+    return missing
+
+
+def _estimate_reproduction_difficulty(chunks: list[Chunk]) -> ReproductionDifficulty:
+    reasons = _extract_missing_details(chunks)
+    has_training = _has_any_pattern(chunks, TRAINING_PATTERNS)
+    has_dataset = _has_any_pattern(chunks, DATASET_PATTERNS)
+    has_model = _has_any_pattern(chunks, MODEL_PATTERNS)
+
+    if not chunks:
+        return ReproductionDifficulty(level="unknown", reasons=[])
+    if len(reasons) >= 2 or not has_model:
+        return ReproductionDifficulty(level="high", reasons=reasons)
+    if not has_training or not has_dataset:
+        return ReproductionDifficulty(level="medium", reasons=reasons)
+    return ReproductionDifficulty(level="low", reasons=reasons)
+
+
+def _first_matching_citation(chunks: Iterable[Chunk], regexes: list[str]) -> Citation | None:
+    compiled = [re.compile(regex, re.IGNORECASE) for regex in regexes]
+    for chunk in chunks:
+        for regex in compiled:
+            match = regex.search(chunk.text)
+            if match is not None:
+                evidence = _sentence_containing(chunk.text, match.group(0))
+                return _citation_with_evidence(chunk, evidence)
+    return None
+
+
+def _first_section_citation(chunks: Iterable[Chunk], sections: set[str]) -> Citation | None:
+    for chunk in chunks:
+        if chunk.section in sections:
+            return chunk.citation
+    return None
+
+
+def _has_any_pattern(chunks: Iterable[Chunk], patterns: dict[str, list[str]]) -> bool:
+    return any(
+        re.search(regex, chunk.text, re.IGNORECASE)
+        for chunk in chunks
+        for regexes in patterns.values()
+        for regex in regexes
+    )
+
+
+def _first_sentence_with(text: str, terms: tuple[str, ...]) -> str | None:
+    for sentence in _sentences(text):
+        lowered = sentence.lower()
+        if any(term in lowered for term in terms):
+            return sentence
+    return None
+
+
+def _sentence_containing(text: str, needle: str) -> str:
+    lowered_needle = needle.lower()
+    for sentence in _sentences(text):
+        if lowered_needle in sentence.lower():
+            return sentence
+    return needle
+
+
+def _sentences(text: str) -> list[str]:
+    return [
+        sentence.strip()
+        for sentence in re.split(r"(?<=[.!?])\s+", text.replace("\n", " "))
+        if sentence.strip()
+    ]
+
+
+def _citation_with_evidence(chunk: Chunk, evidence_text: str) -> Citation:
+    evidence = _compact(evidence_text)
+    return Citation(
+        paper_id=chunk.paper_id,
+        chunk_id=chunk.chunk_id,
+        page=chunk.page_start,
+        section=chunk.section,
+        evidence_text=evidence[:300],
+    )
+
+
+def _dedupe_values(values: list[CitedValue]) -> list[CitedValue]:
+    deduped: list[CitedValue] = []
+    seen: set[str] = set()
+    for value in values:
+        key = value.value.lower()
+        if key in seen:
+            continue
+        deduped.append(value)
+        seen.add(key)
+    return deduped
+
+
+def _compact(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()

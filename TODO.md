@@ -42,13 +42,14 @@
 ### 5. GNN-specific Paper Card
 
 - [x] 实现 Pydantic schema。
-- [ ] 设计结构化抽取 prompt。
-- [ ] 抽取 `task_type`、`graph_type`、`datasets`、`node_types`、`edge_types`。
-- [ ] 抽取 `model_modules`、`losses`、`attacks`、`defenses`。
-- [ ] 抽取 `metrics`、`baselines`、`main_results`。
-- [ ] 评估 `reproduction_difficulty`。
-- [ ] 输出 `missing_implementation_details`。
-- [ ] 保证关键字段带 citations。
+- [x] 实现规则版结构化抽取器，后续再接 LLM prompt。
+- [x] 抽取 `task_type`、`graph_type`、`datasets`、`node_types`、`edge_types`。
+- [x] 抽取 `model_modules`、`losses`、`attacks`、`defenses`。
+- [x] 抽取 `metrics`、`baselines`、`main_results`。
+- [x] 评估 `reproduction_difficulty`。
+- [x] 输出 `missing_implementation_details`。
+- [x] 保证关键字段带 citations。
+- [ ] 设计 LLM 结构化抽取 prompt。
 
 ### 6. 单篇论文 QA
 
@@ -62,8 +63,8 @@
 
 - [ ] 准备最小样例 PDF。
 - [ ] 增加上传和 hash 复用测试。
-- [ ] 增加 chunk/citation schema 测试。
-- [ ] 增加 paper card 字段完整性测试。
+- [x] 增加 chunk/citation schema 测试。
+- [x] 增加 paper card 字段完整性测试。
 - [ ] 增加 QA citation 行为测试。
 
 ## Phase 2：多论文分析与复现规划

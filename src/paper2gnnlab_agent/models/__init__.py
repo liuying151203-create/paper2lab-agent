@@ -1,5 +1,11 @@
 """Pydantic models for Paper2GNNLab-Agent domain objects."""
 
+from paper2gnnlab_agent.models.card import (
+    GeneratePaperCardRequest,
+    PaperCard,
+    PaperCardResponse,
+    ReproductionDifficulty,
+)
 from paper2gnnlab_agent.models.chunk import (
     Chunk,
     ChunkListResponse,
@@ -38,14 +44,18 @@ __all__ = [
     "ChunkListResponse",
     "Paper",
     "PaperArtifacts",
+    "PaperCard",
+    "PaperCardResponse",
     "PaperDetailResponse",
     "PaperStatus",
     "PaperUploadResponse",
+    "GeneratePaperCardRequest",
     "GenerateChunksRequest",
     "GenerateChunksResponse",
     "ParsedPage",
     "ParsedPaper",
     "ParsePaperRequest",
     "ParsePaperResponse",
+    "ReproductionDifficulty",
     "SourceOffset",
 ]

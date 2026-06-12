@@ -14,7 +14,15 @@ class FakeParser:
     name = "fake"
 
     def parse_pages(self, pdf_path: Path) -> list[ParsedPage]:
-        return [ParsedPage(page=1, text=f"parsed from {pdf_path.name}")]
+        return [
+            ParsedPage(
+                page=1,
+                text=(
+                    f"parsed from {pdf_path.name}. We propose a GCN for node "
+                    "classification on Cora and report accuracy."
+                ),
+            )
+        ]
 
 
 def test_api_upload_reuse_and_get_paper(tmp_path: Path) -> None:
@@ -98,3 +106,15 @@ def test_api_upload_reuse_and_get_paper(tmp_path: Path) -> None:
     assert chunks_payload["total"] == 1
     assert chunks_payload["items"][0]["paper_id"] == payload["paper_id"]
     assert chunks_payload["items"][0]["citation"]["paper_id"] == payload["paper_id"]
+
+    card = client.post(f"/api/v1/papers/{payload['paper_id']}/card", json={"force": False})
+    assert card.status_code == 200
+    card_payload = card.json()
+    assert card_payload["status"] == "card_ready"
+    assert card_payload["reused"] is False
+    assert card_payload["card"]["task_type"][0]["value"] == "node classification"
+    assert card_payload["card"]["task_type"][0]["citations"][0]["paper_id"] == payload["paper_id"]
+
+    loaded_card = client.get(f"/api/v1/papers/{payload['paper_id']}/card")
+    assert loaded_card.status_code == 200
+    assert loaded_card.json()["reused"] is True

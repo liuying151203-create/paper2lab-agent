@@ -5,6 +5,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+from paper2gnnlab_agent.models.card import PaperCard, PaperCardResponse
 from paper2gnnlab_agent.models.chunk import (
     Chunk,
     ChunkListResponse,
@@ -21,6 +22,7 @@ from paper2gnnlab_agent.models.parsed import ParsedPaper, ParsePaperResponse
 from paper2gnnlab_agent.parsers.chunking import TextChunker
 from paper2gnnlab_agent.parsers.cleaning import TextCleaner
 from paper2gnnlab_agent.parsers.pdf import PdfParser, PdfParsingError, PypdfParser
+from paper2gnnlab_agent.services.card_extraction import RuleBasedPaperCardExtractor
 from paper2gnnlab_agent.storage.chunk_repository import ChunkRepository
 from paper2gnnlab_agent.storage.paper_repository import PaperRepository
 from paper2gnnlab_agent.storage.paths import StoragePaths
@@ -44,12 +46,14 @@ class PaperIngestionService:
         parser: PdfParser | None = None,
         cleaner: TextCleaner | None = None,
         chunk_repository: ChunkRepository | None = None,
+        card_extractor: RuleBasedPaperCardExtractor | None = None,
     ) -> None:
         self.repository = repository
         self.paths = paths
         self.parser = parser or PypdfParser()
         self.cleaner = cleaner or TextCleaner()
         self.chunk_repository = chunk_repository or ChunkRepository(repository.sqlite_path)
+        self.card_extractor = card_extractor or RuleBasedPaperCardExtractor()
 
     def upload_pdf(self, filename: str, content: bytes) -> PaperUploadResponse:
         """Persist a new PDF or reuse an existing paper by SHA-256 hash."""
@@ -265,6 +269,56 @@ class PaperIngestionService:
             items=filtered[offset : offset + limit],
         )
 
+    def generate_paper_card(self, paper_id: str, force: bool = False) -> PaperCardResponse:
+        """Generate and persist a GNN-specific paper card from chunks."""
+
+        paper = self.repository.get_by_id(paper_id)
+        if paper is None:
+            raise PaperNotFoundError(paper_id)
+
+        card_path = self._card_path(paper_id)
+        if card_path.exists() and not force:
+            card = _read_paper_card(card_path)
+            return PaperCardResponse(
+                paper_id=paper_id,
+                status="card_ready",
+                card=card,
+                reused=True,
+            )
+
+        chunks_path = self._chunks_path(paper_id)
+        if not chunks_path.exists():
+            raise ChunksArtifactNotFoundError(paper_id)
+
+        chunks = _read_chunks(chunks_path)
+        card = self.card_extractor.extract(paper_id=paper_id, chunks=chunks)
+        self.paths.cards_dir.mkdir(parents=True, exist_ok=True)
+        _write_paper_card(card_path, card)
+        self.repository.update_status(paper_id, "card_ready")
+        return PaperCardResponse(
+            paper_id=paper_id,
+            status="card_ready",
+            card=card,
+            reused=False,
+        )
+
+    def get_paper_card(self, paper_id: str) -> PaperCardResponse:
+        """Read a generated GNN-specific paper card without implicit generation."""
+
+        if self.repository.get_by_id(paper_id) is None:
+            raise PaperNotFoundError(paper_id)
+
+        card_path = self._card_path(paper_id)
+        if not card_path.exists():
+            raise CardArtifactNotFoundError(paper_id)
+
+        return PaperCardResponse(
+            paper_id=paper_id,
+            status="card_ready",
+            card=_read_paper_card(card_path),
+            reused=True,
+        )
+
     @staticmethod
     def _validate_pdf(filename: str, content: bytes) -> None:
         if not filename.lower().endswith(".pdf"):
@@ -280,6 +334,9 @@ class PaperIngestionService:
 
     def _chunks_path(self, paper_id: str) -> Path:
         return self.paths.chunks_dir / f"{paper_id}.jsonl"
+
+    def _card_path(self, paper_id: str) -> Path:
+        return self.paths.cards_dir / f"{paper_id}.json"
 
 
 def compute_file_hash(content: bytes) -> str:
@@ -300,6 +357,7 @@ def build_paper_service(
     parser: PdfParser | None = None,
     cleaner: TextCleaner | None = None,
     chunk_repository: ChunkRepository | None = None,
+    card_extractor: RuleBasedPaperCardExtractor | None = None,
 ) -> PaperIngestionService:
     """Factory used by API dependencies and tests."""
 
@@ -309,6 +367,7 @@ def build_paper_service(
         parser=parser,
         cleaner=cleaner,
         chunk_repository=chunk_repository,
+        card_extractor=card_extractor,
     )
 
 
@@ -319,6 +378,8 @@ def _next_actions_for_status(status: str) -> list[str]:
         return ["clean"]
     if status in {"cleaned", "chunked"}:
         return ["card"]
+    if status == "card_ready":
+        return ["qa"]
     return []
 
 
@@ -349,6 +410,14 @@ def _read_chunks(path: Path) -> list[Chunk]:
     ]
 
 
+def _write_paper_card(path: Path, card: PaperCard) -> None:
+    path.write_text(card.model_dump_json(indent=2), encoding="utf-8")
+
+
+def _read_paper_card(path: Path) -> PaperCard:
+    return PaperCard.model_validate(json.loads(path.read_text(encoding="utf-8")))
+
+
 class ParsedArtifactNotFoundError(ValueError):
     """Raised when cleaning is requested before PDF parsing has produced text."""
 
@@ -359,3 +428,7 @@ class CleanedArtifactNotFoundError(ValueError):
 
 class ChunksArtifactNotFoundError(ValueError):
     """Raised when chunks are requested before chunking has produced text."""
+
+
+class CardArtifactNotFoundError(ValueError):
+    """Raised when a paper card is requested before generation."""

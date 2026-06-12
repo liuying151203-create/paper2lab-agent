@@ -15,8 +15,20 @@ class FakeParser:
 
     def parse_pages(self, pdf_path: Path) -> list[ParsedPage]:
         return [
-            ParsedPage(page=1, text=f"parsed from {pdf_path.name}"),
-            ParsedPage(page=2, text="GNN method details"),
+            ParsedPage(
+                page=1,
+                text=(
+                    f"parsed from {pdf_path.name}. We propose a GCN for node "
+                    "classification on Cora."
+                ),
+            ),
+            ParsedPage(
+                page=2,
+                text=(
+                    "Experiments use accuracy with Adam optimizer, learning rate 0.01, "
+                    "and 200 epochs."
+                ),
+            ),
         ]
 
 
@@ -78,6 +90,8 @@ def test_parse_pdf_writes_page_text_cleans_text_and_reuses_artifacts(tmp_path: P
     chunked = service.generate_chunks(upload.paper_id, max_chars=120)
     reused_chunks = service.generate_chunks(upload.paper_id)
     listed_chunks = service.list_chunks(upload.paper_id)
+    card = service.generate_paper_card(upload.paper_id)
+    reused_card = service.get_paper_card(upload.paper_id)
     detail = service.get_paper_detail(upload.paper_id)
 
     assert parsed.status == "cleaned"
@@ -90,10 +104,16 @@ def test_parse_pdf_writes_page_text_cleans_text_and_reuses_artifacts(tmp_path: P
     assert reused_chunks.reused is True
     assert listed_chunks.total == chunked.chunks_count
     assert listed_chunks.items[0].citation.paper_id == upload.paper_id
-    assert detail.status == "chunked"
+    assert card.status == "card_ready"
+    assert card.card.task_type[0].value == "node classification"
+    assert card.card.task_type[0].citations[0].paper_id == upload.paper_id
+    assert reused_card.reused is True
+    assert detail.status == "card_ready"
     assert detail.artifacts.parsed is True
     assert detail.artifacts.cleaned is True
     assert detail.artifacts.chunks is True
+    assert detail.artifacts.paper_card is True
     assert (paths.parsed_dir / f"{upload.paper_id}.json").exists()
     assert (paths.cleaned_dir / f"{upload.paper_id}.json").exists()
     assert (paths.chunks_dir / f"{upload.paper_id}.jsonl").exists()
+    assert (paths.cards_dir / f"{upload.paper_id}.json").exists()

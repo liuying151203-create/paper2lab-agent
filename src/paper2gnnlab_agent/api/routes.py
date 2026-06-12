@@ -7,6 +7,10 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from paper2gnnlab_agent import __version__
 from paper2gnnlab_agent.api.dependencies import get_app_settings, get_paper_service
 from paper2gnnlab_agent.core.config import Settings
+from paper2gnnlab_agent.models.card import (
+    GeneratePaperCardRequest,
+    PaperCardResponse,
+)
 from paper2gnnlab_agent.models.chunk import (
     ChunkListResponse,
     GenerateChunksRequest,
@@ -17,6 +21,7 @@ from paper2gnnlab_agent.models.paper import PaperDetailResponse, PaperUploadResp
 from paper2gnnlab_agent.models.parsed import ParsePaperRequest, ParsePaperResponse
 from paper2gnnlab_agent.parsers.pdf import PdfParsingError
 from paper2gnnlab_agent.services.papers import (
+    CardArtifactNotFoundError,
     ChunksArtifactNotFoundError,
     CleanedArtifactNotFoundError,
     InvalidPaperUploadError,
@@ -162,4 +167,43 @@ def list_chunks(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Chunks not found.",
+        ) from exc
+
+
+@router.post("/papers/{paper_id}/card", response_model=PaperCardResponse, tags=["papers"])
+def generate_paper_card(
+    paper_id: str,
+    request: GeneratePaperCardRequest,
+    service: PaperServiceDep,
+) -> PaperCardResponse:
+    try:
+        return service.generate_paper_card(paper_id=paper_id, force=request.force)
+    except PaperNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Paper not found.",
+        ) from exc
+    except ChunksArtifactNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Paper must be chunked before card generation.",
+        ) from exc
+
+
+@router.get("/papers/{paper_id}/card", response_model=PaperCardResponse, tags=["papers"])
+def get_paper_card(
+    paper_id: str,
+    service: PaperServiceDep,
+) -> PaperCardResponse:
+    try:
+        return service.get_paper_card(paper_id=paper_id)
+    except PaperNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Paper not found.",
+        ) from exc
+    except CardArtifactNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Card not ready.",
         ) from exc
