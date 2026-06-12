@@ -409,12 +409,64 @@ Query：
 - 若任一 paper 尚未生成 PaperCard，返回 `409`。
 - 不支持的 dimensions 会被忽略；若全部无效，则使用默认对比维度。
 
-## 11. Phase 2 预留接口
+## 11. 复现 Checklist
 
-- `POST /api/v1/papers/{paper_id}/reproduction-plan`：生成复现 checklist。
+### `POST /api/v1/papers/{paper_id}/reproduction-plan`
+
+用途：基于已生成的 GNN PaperCard 生成复现 checklist，输出 `ReproductionPlan`。
+
+请求：
+```json
+{
+  "force": false
+}
+```
+
+响应：
+```json
+{
+  "paper_id": "paper_a1b2c3d4",
+  "status": "reproduction_plan_ready",
+  "reused": false,
+  "plan": {
+    "paper_id": "paper_a1b2c3d4",
+    "objective": "Reproduce Example GNN Paper for node classification on Cora.",
+    "environment": [
+      {
+        "item": "Create a Python environment with PyTorch and a graph learning stack such as PyG or DGL.",
+        "status": "needs_manual_check",
+        "rationale": "PaperCard does not encode exact package versions...",
+        "citations": []
+      }
+    ],
+    "data_preparation": [],
+    "model_implementation": [],
+    "attack_or_defense_setup": [],
+    "training_pipeline": [],
+    "evaluation": [],
+    "ablation_studies": [],
+    "risks": [],
+    "missing_details": [],
+    "estimated_difficulty": "medium",
+    "generated_at": "2026-06-12T10:10:00Z"
+  }
+}
+```
+
+行为：
+- 只读取 `data/cards/{paper_id}.json`，不隐式触发 PDF 解析、chunk 或 PaperCard 生成。
+- 输出保存到 `data/specs/{paper_id}.reproduction_plan.json`。
+- `force=false` 且 reproduction plan 已存在时直接复用，返回 `reused=true`。
+- 若 paper 不存在，返回 `404`。
+- 若 PaperCard 尚未生成，返回 `409`。
+- checklist 按 GNN 复现流程拆分为环境、数据准备、模型实现、攻击/防御设置、训练、评估、消融、风险和缺失实现细节。
+- 基于论文内容的 checklist item 必须保留 citations；论文未明确给出的实现细节标记为 `needs_manual_check` 或 `blocked`。
+
+## 12. Phase 2 预留接口
+
 - `POST /api/v1/papers/{paper_id}/method-spec`：生成 `method_spec.yaml`。
 
-## 12. Phase 3 预留接口
+## 13. Phase 3 预留接口
 
 - `POST /api/v1/method-specs/{spec_id}/scaffold`：基于模板生成实验项目骨架。
 - `POST /api/v1/graphrag/search`：可选 GraphRAG 联动检索。

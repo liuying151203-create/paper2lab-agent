@@ -21,6 +21,10 @@ from paper2gnnlab_agent.models.comparison import (
     PaperComparisonRequest,
     PaperComparisonResponse,
 )
+from paper2gnnlab_agent.models.method import (
+    GenerateReproductionPlanRequest,
+    ReproductionPlanResponse,
+)
 from paper2gnnlab_agent.models.paper import PaperDetailResponse, PaperUploadResponse
 from paper2gnnlab_agent.models.parsed import ParsePaperRequest, ParsePaperResponse
 from paper2gnnlab_agent.models.qa import PaperQARequest, PaperQAResponse
@@ -257,4 +261,28 @@ def answer_paper_question(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Paper must be chunked before QA.",
+        ) from exc
+
+
+@router.post(
+    "/papers/{paper_id}/reproduction-plan",
+    response_model=ReproductionPlanResponse,
+    tags=["papers"],
+)
+def generate_reproduction_plan(
+    paper_id: str,
+    request: GenerateReproductionPlanRequest,
+    service: PaperServiceDep,
+) -> ReproductionPlanResponse:
+    try:
+        return service.generate_reproduction_plan(paper_id=paper_id, force=request.force)
+    except PaperNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Paper not found.",
+        ) from exc
+    except CardArtifactNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Paper must have a generated PaperCard before reproduction planning.",
         ) from exc

@@ -24,6 +24,12 @@ from paper2gnnlab_agent.models.comparison import (
     PaperComparisonResponse,
     PaperComparisonRow,
 )
+from paper2gnnlab_agent.models.method import (
+    ChecklistItem,
+    GenerateReproductionPlanRequest,
+    ReproductionPlan,
+    ReproductionPlanResponse,
+)
 from paper2gnnlab_agent.models.paper import (
     Paper,
     PaperArtifacts,
@@ -48,6 +54,7 @@ __all__ = [
     "CleanPaperResponse",
     "Chunk",
     "ChunkListResponse",
+    "ChecklistItem",
     "Paper",
     "PaperArtifacts",
     "PaperCard",
@@ -63,10 +70,13 @@ __all__ = [
     "GeneratePaperCardRequest",
     "GenerateChunksRequest",
     "GenerateChunksResponse",
+    "GenerateReproductionPlanRequest",
     "ParsedPage",
     "ParsedPaper",
     "ParsePaperRequest",
     "ParsePaperResponse",
     "ReproductionDifficulty",
+    "ReproductionPlan",
+    "ReproductionPlanResponse",
     "SourceOffset",
 ]

@@ -10,8 +10,11 @@ from paper2gnnlab_agent import __version__
 from paper2gnnlab_agent.core.config import Settings, get_settings
 from paper2gnnlab_agent.models.card import PaperCard
 from paper2gnnlab_agent.models.common import Citation, CitedValue
+from paper2gnnlab_agent.models.comparison import PaperComparisonResponse
 from paper2gnnlab_agent.models.paper import PaperDetailResponse
+from paper2gnnlab_agent.services.comparison import SUPPORTED_COMPARISON_DIMENSIONS
 from paper2gnnlab_agent.services.papers import (
+    CardArtifactNotFoundError,
     ChunksArtifactNotFoundError,
     CleanedArtifactNotFoundError,
     InvalidPaperUploadError,
@@ -42,7 +45,11 @@ def main() -> None:
         render_runtime(settings)
         return
 
-    render_paper_workspace(service, selected_paper_id)
+    single_tab, comparison_tab = st.tabs(["Single paper", "Compare papers"])
+    with single_tab:
+        render_paper_workspace(service, selected_paper_id)
+    with comparison_tab:
+        render_comparison_workspace(service)
 
 
 @st.cache_resource
@@ -290,6 +297,86 @@ def render_qa_panel(service: PaperIngestionService, paper_id: str) -> None:
         render_citations([Citation.model_validate(item) for item in response["citations"]])
 
 
+def render_comparison_workspace(service: PaperIngestionService) -> None:
+    """Render Phase 2 multi-paper PaperCard comparison."""
+
+    st.subheader("Multi-paper comparison")
+    card_ready_papers = [
+        paper
+        for paper in service.repository.list_recent(limit=100)
+        if service.get_paper_detail(paper.paper_id).artifacts.paper_card
+    ]
+    if len(card_ready_papers) < 2:
+        st.info("Generate PaperCards for at least two papers before comparing them.")
+        return
+
+    paper_options = [paper.paper_id for paper in card_ready_papers]
+    selected_papers = st.multiselect(
+        "Papers",
+        options=paper_options,
+        default=paper_options[:2],
+        format_func=lambda paper_id: _format_paper_option(paper_id, card_ready_papers),
+    )
+    dimensions = st.multiselect(
+        "Dimensions",
+        options=sorted(SUPPORTED_COMPARISON_DIMENSIONS),
+        default=[
+            "task_type",
+            "datasets",
+            "model_modules",
+            "metrics",
+            "baselines",
+            "reproduction_difficulty",
+        ],
+    )
+
+    if st.button(
+        "Compare",
+        type="primary",
+        disabled=len(selected_papers) < 2,
+        use_container_width=True,
+    ):
+        run_action(
+            lambda: service.compare_papers(
+                paper_ids=selected_papers,
+                dimensions=dimensions,
+            ),
+            success=lambda response: set_last_comparison(response.model_dump()),
+        )
+
+    response_data = st.session_state.get("last_comparison")
+    if response_data:
+        render_comparison(PaperComparisonResponse.model_validate(response_data))
+
+
+def render_comparison(response: PaperComparisonResponse) -> None:
+    """Render comparison summary, matrix, and citations."""
+
+    st.markdown("**Summary**")
+    st.write(response.summary)
+    st.dataframe(
+        [
+            {
+                "paper_id": row.paper_id,
+                **{
+                    dimension: _format_comparison_values(row.values.get(dimension, []))
+                    for dimension in response.dimensions
+                },
+            }
+            for row in response.rows
+        ],
+        use_container_width=True,
+        hide_index=True,
+    )
+    render_citations(response.citations)
+
+
+def _format_comparison_values(values: list[CitedValue]) -> str:
+    if not values:
+        return ""
+    return "; ".join(value.value for value in values)
+
+
 def render_citations(citations: list[Citation]) -> None:
     """Render citations in expandable evidence blocks."""
 
@@ -318,6 +405,8 @@ def run_action(action: Callable[[], object], success: Callable[[object], None]) 
         st.error("Clean the paper before generating chunks.")
     except ChunksArtifactNotFoundError:
         st.error("Generate chunks before this action.")
+    except CardArtifactNotFoundError:
+        st.error("Generate PaperCards before this action.")
     except PaperNotFoundError:
         st.error("Paper not found.")
     except Exception as exc:  # noqa: BLE001
@@ -333,6 +422,10 @@ def set_selected_paper(paper_id: str) -> None:
 
 def set_last_qa(response: dict[str, object]) -> None:
     st.session_state["last_qa"] = response
+
+
+def set_last_comparison(response: dict[str, object]) -> None:
+    st.session_state["last_comparison"] = response
 
 
 def _format_paper_option(paper_id: str, papers: list[object]) -> str:

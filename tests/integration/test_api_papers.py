@@ -119,6 +119,32 @@ def test_api_upload_reuse_and_get_paper(tmp_path: Path) -> None:
     assert loaded_card.status_code == 200
     assert loaded_card.json()["reused"] is True
 
+    reproduction_plan = client.post(
+        f"/api/v1/papers/{payload['paper_id']}/reproduction-plan",
+        json={"force": False},
+    )
+    assert reproduction_plan.status_code == 200
+    reproduction_payload = reproduction_plan.json()
+    assert reproduction_payload["status"] == "reproduction_plan_ready"
+    assert reproduction_payload["reused"] is False
+    assert reproduction_payload["plan"]["paper_id"] == payload["paper_id"]
+    assert reproduction_payload["plan"]["estimated_difficulty"] in {
+        "low",
+        "medium",
+        "high",
+        "unknown",
+    }
+    assert reproduction_payload["plan"]["data_preparation"]
+    assert reproduction_payload["plan"]["model_implementation"]
+    assert reproduction_payload["plan"]["evaluation"]
+
+    reused_plan = client.post(
+        f"/api/v1/papers/{payload['paper_id']}/reproduction-plan",
+        json={"force": False},
+    )
+    assert reused_plan.status_code == 200
+    assert reused_plan.json()["reused"] is True
+
     qa = client.post(
         f"/api/v1/papers/{payload['paper_id']}/qa",
         json={"question": "What task and dataset are used?", "top_k": 3},

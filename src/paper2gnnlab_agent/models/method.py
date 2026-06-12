@@ -93,3 +93,18 @@ class ReproductionPlan(BaseModel):
     missing_details: list[ChecklistItem] = Field(default_factory=list)
     estimated_difficulty: Literal["low", "medium", "high", "unknown"]
     generated_at: datetime
+
+
+class GenerateReproductionPlanRequest(BaseModel):
+    """Request body for generating a GNN reproduction checklist."""
+
+    force: bool = False
+
+
+class ReproductionPlanResponse(BaseModel):
+    """Response returned after generating or reading a reproduction plan."""
+
+    paper_id: str
+    status: Literal["reproduction_plan_ready"]
+    plan: ReproductionPlan
+    reused: bool = False

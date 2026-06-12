@@ -90,13 +90,14 @@
 - [x] 支持按 `attacks`、`defenses`、`baselines` 对比。
 - [x] 输出横向对比表和 summary。
 - [x] 保留每个结论的 citations。
+- [x] 在 Streamlit UI 中展示多论文横向对比。
 
 ### 2. 复现 checklist
 
-- [ ] 基于 PaperCard 生成 ReproductionPlan。
-- [ ] 拆分环境、数据、模型、训练、评估、消融实验。
-- [ ] 标记 missing details 和人工确认项。
-- [ ] 为高风险复现步骤给出原因和 citations。
+- [x] 基于 PaperCard 生成 ReproductionPlan。
+- [x] 拆分环境、数据、模型、训练、评估、消融实验。
+- [x] 标记 missing details 和人工确认项。
+- [x] 为高风险复现步骤给出原因和 citations。
 
 ### 3. method_spec.yaml
 

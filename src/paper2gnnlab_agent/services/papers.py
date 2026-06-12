@@ -13,6 +13,7 @@ from paper2gnnlab_agent.models.chunk import (
 )
 from paper2gnnlab_agent.models.cleaned import CleanedPaper, CleanPaperResponse
 from paper2gnnlab_agent.models.comparison import PaperComparisonResponse
+from paper2gnnlab_agent.models.method import ReproductionPlan, ReproductionPlanResponse
 from paper2gnnlab_agent.models.paper import (
     Paper,
     PaperArtifacts,
@@ -32,6 +33,7 @@ from paper2gnnlab_agent.services.card_extraction import (
 from paper2gnnlab_agent.services.comparison import PaperComparisonService
 from paper2gnnlab_agent.services.llm import OpenAICompatibleChatClient
 from paper2gnnlab_agent.services.qa import ChunkQAService, LlmAnswerComposer
+from paper2gnnlab_agent.services.reproduction import ReproductionChecklistService
 from paper2gnnlab_agent.storage.chunk_repository import ChunkRepository
 from paper2gnnlab_agent.storage.paper_repository import PaperRepository
 from paper2gnnlab_agent.storage.paths import StoragePaths
@@ -58,6 +60,7 @@ class PaperIngestionService:
         card_extractor: PaperCardExtractor | None = None,
         qa_service: ChunkQAService | None = None,
         comparison_service: PaperComparisonService | None = None,
+        reproduction_service: ReproductionChecklistService | None = None,
     ) -> None:
         self.repository = repository
         self.paths = paths
@@ -67,6 +70,7 @@ class PaperIngestionService:
         self.card_extractor = card_extractor or RuleBasedPaperCardExtractor()
         self.qa_service = qa_service or ChunkQAService()
         self.comparison_service = comparison_service or PaperComparisonService()
+        self.reproduction_service = reproduction_service or ReproductionChecklistService()
 
     def upload_pdf(self, filename: str, content: bytes) -> PaperUploadResponse:
         """Persist a new PDF or reuse an existing paper by SHA-256 hash."""
@@ -367,6 +371,39 @@ class PaperIngestionService:
             cards.append(_read_paper_card(card_path))
         return self.comparison_service.compare(cards=cards, dimensions=dimensions)
 
+    def generate_reproduction_plan(
+        self,
+        paper_id: str,
+        force: bool = False,
+    ) -> ReproductionPlanResponse:
+        """Generate and persist a GNN reproduction checklist from a PaperCard."""
+
+        if self.repository.get_by_id(paper_id) is None:
+            raise PaperNotFoundError(paper_id)
+
+        plan_path = self._reproduction_plan_path(paper_id)
+        if plan_path.exists() and not force:
+            return ReproductionPlanResponse(
+                paper_id=paper_id,
+                status="reproduction_plan_ready",
+                plan=_read_reproduction_plan(plan_path),
+                reused=True,
+            )
+
+        card_path = self._card_path(paper_id)
+        if not card_path.exists():
+            raise CardArtifactNotFoundError(paper_id)
+
+        plan = self.reproduction_service.generate(_read_paper_card(card_path))
+        self.paths.specs_dir.mkdir(parents=True, exist_ok=True)
+        _write_reproduction_plan(plan_path, plan)
+        return ReproductionPlanResponse(
+            paper_id=paper_id,
+            status="reproduction_plan_ready",
+            plan=plan,
+            reused=False,
+        )
+
     @staticmethod
     def _validate_pdf(filename: str, content: bytes) -> None:
         if not filename.lower().endswith(".pdf"):
@@ -385,6 +422,9 @@ class PaperIngestionService:
 
     def _card_path(self, paper_id: str) -> Path:
         return self.paths.cards_dir / f"{paper_id}.json"
+
+    def _reproduction_plan_path(self, paper_id: str) -> Path:
+        return self.paths.specs_dir / f"{paper_id}.reproduction_plan.json"
 
 
 def compute_file_hash(content: bytes) -> str:
@@ -408,6 +448,7 @@ def build_paper_service(
     card_extractor: PaperCardExtractor | None = None,
     qa_service: ChunkQAService | None = None,
     comparison_service: PaperComparisonService | None = None,
+    reproduction_service: ReproductionChecklistService | None = None,
 ) -> PaperIngestionService:
     """Factory used by API dependencies and tests."""
 
@@ -420,6 +461,7 @@ def build_paper_service(
         card_extractor=card_extractor,
         qa_service=qa_service,
         comparison_service=comparison_service,
+        reproduction_service=reproduction_service,
     )
 
 
@@ -511,6 +553,14 @@ def _write_paper_card(path: Path, card: PaperCard) -> None:
 
 def _read_paper_card(path: Path) -> PaperCard:
     return PaperCard.model_validate(json.loads(path.read_text(encoding="utf-8")))
+
+
+def _write_reproduction_plan(path: Path, plan: ReproductionPlan) -> None:
+    path.write_text(plan.model_dump_json(indent=2), encoding="utf-8")
+
+
+def _read_reproduction_plan(path: Path) -> ReproductionPlan:
+    return ReproductionPlan.model_validate(json.loads(path.read_text(encoding="utf-8")))
 
 
 class ParsedArtifactNotFoundError(ValueError):
