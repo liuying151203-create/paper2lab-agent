@@ -13,6 +13,7 @@ class StoragePaths:
     data_dir: Path
     papers_dir: Path
     parsed_dir: Path
+    cleaned_dir: Path
     chunks_dir: Path
     cards_dir: Path
     specs_dir: Path
@@ -28,6 +29,7 @@ def build_storage_paths(settings: Settings) -> StoragePaths:
         data_dir=data_dir,
         papers_dir=data_dir / "papers",
         parsed_dir=data_dir / "parsed",
+        cleaned_dir=data_dir / "cleaned",
         chunks_dir=data_dir / "chunks",
         cards_dir=data_dir / "cards",
         specs_dir=data_dir / "specs",

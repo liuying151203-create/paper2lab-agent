@@ -25,6 +25,7 @@ def make_paths(tmp_path: Path) -> StoragePaths:
         data_dir=tmp_path,
         papers_dir=tmp_path / "papers",
         parsed_dir=tmp_path / "parsed",
+        cleaned_dir=tmp_path / "cleaned",
         chunks_dir=tmp_path / "chunks",
         cards_dir=tmp_path / "cards",
         specs_dir=tmp_path / "specs",
@@ -57,10 +58,12 @@ def test_upload_pdf_creates_metadata_and_reuses_hash(tmp_path: Path) -> None:
 
     detail = service.get_paper_detail(first.paper_id)
     assert detail.status == "uploaded"
+    assert detail.artifacts.parsed is False
+    assert detail.artifacts.cleaned is False
     assert detail.artifacts.chunks is False
 
 
-def test_parse_pdf_writes_page_text_and_reuses_artifact(tmp_path: Path) -> None:
+def test_parse_pdf_writes_page_text_cleans_text_and_reuses_artifacts(tmp_path: Path) -> None:
     paths = make_paths(tmp_path)
     service = PaperIngestionService(
         repository=PaperRepository(paths.sqlite_path),
@@ -71,11 +74,16 @@ def test_parse_pdf_writes_page_text_and_reuses_artifact(tmp_path: Path) -> None:
 
     parsed = service.parse_pdf(upload.paper_id)
     reused = service.parse_pdf(upload.paper_id)
+    cleaned = service.clean_parsed_text(upload.paper_id)
     detail = service.get_paper_detail(upload.paper_id)
 
-    assert parsed.status == "parsed"
+    assert parsed.status == "cleaned"
     assert parsed.pages_count == 2
     assert parsed.reused is False
     assert reused.reused is True
-    assert detail.status == "parsed"
+    assert cleaned.reused is True
+    assert detail.status == "cleaned"
+    assert detail.artifacts.parsed is True
+    assert detail.artifacts.cleaned is True
     assert (paths.parsed_dir / f"{upload.paper_id}.json").exists()
+    assert (paths.cleaned_dir / f"{upload.paper_id}.json").exists()

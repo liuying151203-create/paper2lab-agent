@@ -1,12 +1,11 @@
 # MVP API 设计
 
-本文定义 Phase 1 需要的 FastAPI 接口。接口围绕单篇 GNN 论文的上传、解析、chunk/citation 持久化、结构化论文卡片和带引用问答展开。
+本文定义 Phase 1 需要的 FastAPI 接口。接口围绕单篇 GNN 论文的上传、解析、文本清洗、chunk/citation 持久化、结构化论文卡片和带引用问答展开。
 
 ## 1. 基础约定
 
-- Base URL：`/api/v1`
+- Base URL: `/api/v1`
 - 请求/响应使用 JSON，文件上传使用 `multipart/form-data`。
-- 错误响应使用统一结构。
 - 所有返回论文内容结论的接口必须包含 citations 或明确说明缺少证据。
 
 统一错误：
@@ -32,7 +31,9 @@
 ```json
 {
   "status": "ok",
-  "service": "paper2gnnlab-agent"
+  "service": "paper2gnnlab-agent",
+  "env": "development",
+  "version": "0.1.0"
 }
 ```
 
@@ -44,7 +45,7 @@
 
 请求：
 
-- Content-Type：`multipart/form-data`
+- Content-Type: `multipart/form-data`
 - 字段：
   - `file`: PDF 文件
 
@@ -65,13 +66,13 @@
 
 - 若 hash 已存在，返回已有 `paper_id`，`reused=true`。
 - 若 hash 不存在，保存 PDF 并创建 metadata。
-- 此接口不应阻塞到完整 paper card 生成完成；可返回后由后续解析接口或后台任务推进。
+- 此接口不阻塞到 paper card 生成完成。
 
 ## 4. 获取论文状态
 
 ### `GET /api/v1/papers/{paper_id}`
 
-用途：查询论文 metadata 和处理状态。
+用途：查询论文 metadata、处理状态和本地 artifact 状态。
 
 响应：
 
@@ -84,22 +85,24 @@
   "authors": ["A. Researcher"],
   "year": 2026,
   "venue": "ICLR",
-  "status": "card_ready",
+  "status": "cleaned",
   "created_at": "2026-06-11T10:00:00+08:00",
   "updated_at": "2026-06-11T10:10:00+08:00",
   "artifacts": {
-    "chunks": true,
-    "paper_card": true,
+    "parsed": true,
+    "cleaned": true,
+    "chunks": false,
+    "paper_card": false,
     "method_spec": false
   }
 }
 ```
 
-## 5. 触发解析
+## 5. 触发 PDF 解析
 
 ### `POST /api/v1/papers/{paper_id}/parse`
 
-用途：触发 PDF 解析、文本清洗和 chunk 持久化。
+用途：触发 PDF page-level text 解析，并在解析成功后自动执行文本清洗与章节识别。
 
 请求：
 
@@ -114,19 +117,56 @@
 ```json
 {
   "paper_id": "paper_a1b2c3d4",
-  "status": "chunked",
-  "chunks_count": 128,
+  "status": "cleaned",
+  "pages_count": 12,
   "reused": false
 }
 ```
 
 行为：
 
-- `force=false` 且已有 chunks 时直接复用。
-- `force=true` 时重新解析并覆盖该论文的 parsed/chunk artifacts。
+- `force=false` 且已有 parsed artifact 时直接复用。
+- `force=true` 时重新解析并覆盖 parsed/cleaned artifacts。
+- 解析输出保存到 `data/parsed/{paper_id}.json`。
+- 清洗输出保存到 `data/cleaned/{paper_id}.json`。
 - 解析失败时 `Paper.status` 置为 `failed`，并记录 `error_message`。
 
-## 6. 获取 Chunks
+## 6. 清洗文本与章节识别
+
+### `POST /api/v1/papers/{paper_id}/clean`
+
+用途：基于已解析的 page-level text 执行规则化文本清洗和章节识别。
+
+请求：
+
+```json
+{
+  "force": false
+}
+```
+
+响应：
+
+```json
+{
+  "paper_id": "paper_a1b2c3d4",
+  "status": "cleaned",
+  "paragraphs_count": 42,
+  "sections": ["abstract", "introduction", "method", "experiments"],
+  "reused": false
+}
+```
+
+行为：
+
+- 读取 `data/parsed/{paper_id}.json`。
+- 输出 `data/cleaned/{paper_id}.json`。
+- 识别常见 GNN 论文章节，如 `abstract`、`introduction`、`method`、`experiments`、`results`、`conclusion`。
+- 过滤页码、页眉页脚、出版声明、arXiv 标记、参考文献条目等低价值文本。
+- 若 `force=false` 且 cleaned artifact 已存在，则直接复用。
+- 若论文尚未解析，返回 `409`。
+
+## 7. 获取 Chunks
 
 ### `GET /api/v1/papers/{paper_id}/chunks`
 
@@ -160,7 +200,7 @@ Query：
 }
 ```
 
-## 7. 生成或获取 Paper Card
+## 8. 生成或获取 Paper Card
 
 ### `POST /api/v1/papers/{paper_id}/card`
 
@@ -197,14 +237,6 @@ Query：
         ]
       }
     ],
-    "graph_type": [],
-    "datasets": [],
-    "model_modules": [],
-    "losses": [],
-    "attacks": [],
-    "defenses": [],
-    "metrics": [],
-    "baselines": [],
     "reproduction_difficulty": {
       "level": "unknown",
       "reasons": []
@@ -224,7 +256,7 @@ Query：
 - 若不存在，返回 `404 card_not_ready`。
 - 不在 GET 中隐式触发 LLM 生成，避免不可预期成本。
 
-## 8. 单篇论文问答
+## 9. 单篇论文问答
 
 ### `POST /api/v1/papers/{paper_id}/qa`
 
@@ -265,17 +297,13 @@ Query：
 - 回答不能使用无 citation 的论文事实。
 - 如果找不到足够证据，返回部分回答并填充 `unsupported_claims`。
 
-## 9. Phase 2 预留接口
-
-以下接口不进入 Phase 1 实现，只保留方向：
+## 10. Phase 2 预留接口
 
 - `POST /api/v1/comparisons`：多论文横向对比。
 - `POST /api/v1/papers/{paper_id}/reproduction-plan`：生成复现 checklist。
 - `POST /api/v1/papers/{paper_id}/method-spec`：生成 `method_spec.yaml`。
 
-## 10. Phase 3 预留接口
-
-以下接口不进入 Phase 1/2 实现：
+## 11. Phase 3 预留接口
 
 - `POST /api/v1/method-specs/{spec_id}/scaffold`：基于模板生成实验项目骨架。
 - `POST /api/v1/graphrag/search`：可选 GraphRAG 联动检索。

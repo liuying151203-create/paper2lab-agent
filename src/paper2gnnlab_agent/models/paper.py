@@ -9,6 +9,7 @@ PaperStatus = Literal[
     "uploaded",
     "parsing",
     "parsed",
+    "cleaned",
     "chunked",
     "card_ready",
     "failed",
@@ -36,6 +37,8 @@ class Paper(BaseModel):
 class PaperArtifacts(BaseModel):
     """Artifact readiness flags for paper detail responses."""
 
+    parsed: bool = False
+    cleaned: bool = False
     chunks: bool = False
     paper_card: bool = False
     method_spec: bool = False

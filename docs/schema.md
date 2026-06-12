@@ -28,6 +28,7 @@ class Paper(BaseModel):
         "uploaded",
         "parsing",
         "parsed",
+        "cleaned",
         "chunked",
         "card_ready",
         "failed",

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from paper2gnnlab_agent import __version__
 from paper2gnnlab_agent.api.dependencies import get_app_settings, get_paper_service
 from paper2gnnlab_agent.core.config import Settings
+from paper2gnnlab_agent.models.cleaned import CleanPaperRequest, CleanPaperResponse
 from paper2gnnlab_agent.models.paper import PaperDetailResponse, PaperUploadResponse
 from paper2gnnlab_agent.models.parsed import ParsePaperRequest, ParsePaperResponse
 from paper2gnnlab_agent.parsers.pdf import PdfParsingError
@@ -14,6 +15,7 @@ from paper2gnnlab_agent.services.papers import (
     InvalidPaperUploadError,
     PaperIngestionService,
     PaperNotFoundError,
+    ParsedArtifactNotFoundError,
 )
 
 router = APIRouter(prefix="/api/v1")
@@ -80,4 +82,24 @@ def parse_paper(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
+        ) from exc
+
+
+@router.post("/papers/{paper_id}/clean", response_model=CleanPaperResponse, tags=["papers"])
+def clean_paper(
+    paper_id: str,
+    request: CleanPaperRequest,
+    service: PaperServiceDep,
+) -> CleanPaperResponse:
+    try:
+        return service.clean_parsed_text(paper_id=paper_id, force=request.force)
+    except PaperNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Paper not found.",
+        ) from exc
+    except ParsedArtifactNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Paper must be parsed before cleaning.",
         ) from exc

@@ -38,6 +38,7 @@ paper2lab-agent/
   data/
     papers/
     parsed/
+    cleaned/
     chunks/
     cards/
     specs/
@@ -97,6 +98,7 @@ SQLite 适合保存：
 
 - 原始 PDF。
 - 解析后的 page text。
+- 清洗后的 paragraph text。
 - 清洗后的 chunk JSONL。
 - paper card JSON。
 - method spec YAML。

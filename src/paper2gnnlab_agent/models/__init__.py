@@ -1,5 +1,11 @@
 """Pydantic models for Paper2GNNLab-Agent domain objects."""
 
+from paper2gnnlab_agent.models.cleaned import (
+    CleanedPaper,
+    CleanedParagraph,
+    CleanPaperRequest,
+    CleanPaperResponse,
+)
 from paper2gnnlab_agent.models.common import Citation, CitedValue, SourceOffset
 from paper2gnnlab_agent.models.paper import (
     Paper,
@@ -18,6 +24,10 @@ from paper2gnnlab_agent.models.parsed import (
 __all__ = [
     "Citation",
     "CitedValue",
+    "CleanedPaper",
+    "CleanedParagraph",
+    "CleanPaperRequest",
+    "CleanPaperResponse",
     "Paper",
     "PaperArtifacts",
     "PaperDetailResponse",

@@ -22,6 +22,7 @@ def test_api_upload_reuse_and_get_paper(tmp_path: Path) -> None:
         data_dir=tmp_path,
         papers_dir=tmp_path / "papers",
         parsed_dir=tmp_path / "parsed",
+        cleaned_dir=tmp_path / "cleaned",
         chunks_dir=tmp_path / "chunks",
         cards_dir=tmp_path / "cards",
         specs_dir=tmp_path / "specs",
@@ -58,6 +59,8 @@ def test_api_upload_reuse_and_get_paper(tmp_path: Path) -> None:
     detail = client.get(f"/api/v1/papers/{payload['paper_id']}")
     assert detail.status_code == 200
     assert detail.json()["artifacts"] == {
+        "parsed": False,
+        "cleaned": False,
         "chunks": False,
         "paper_card": False,
         "method_spec": False,
@@ -67,7 +70,7 @@ def test_api_upload_reuse_and_get_paper(tmp_path: Path) -> None:
     assert parsed.status_code == 200
     assert parsed.json() == {
         "paper_id": payload["paper_id"],
-        "status": "parsed",
+        "status": "cleaned",
         "pages_count": 1,
         "reused": False,
     }
@@ -75,3 +78,8 @@ def test_api_upload_reuse_and_get_paper(tmp_path: Path) -> None:
     reused_parse = client.post(f"/api/v1/papers/{payload['paper_id']}/parse", json={"force": False})
     assert reused_parse.status_code == 200
     assert reused_parse.json()["reused"] is True
+
+    clean = client.post(f"/api/v1/papers/{payload['paper_id']}/clean", json={"force": False})
+    assert clean.status_code == 200
+    assert clean.json()["reused"] is True
+    assert clean.json()["paragraphs_count"] == 1
