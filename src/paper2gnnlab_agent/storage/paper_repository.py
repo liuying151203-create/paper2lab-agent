@@ -2,7 +2,7 @@
 
 import json
 import sqlite3
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from paper2gnnlab_agent.models.paper import Paper
@@ -65,6 +65,22 @@ class PaperRepository:
         with connect(self.sqlite_path) as connection:
             connection.execute(query, values)
         return paper
+
+    def update_status(
+        self,
+        paper_id: str,
+        status: str,
+        error_message: str | None = None,
+    ) -> Paper | None:
+        query = """
+        UPDATE papers
+        SET status = ?, updated_at = ?, error_message = ?
+        WHERE paper_id = ?
+        """
+        now = datetime.now(UTC).isoformat()
+        with connect(self.sqlite_path) as connection:
+            connection.execute(query, (status, now, error_message, paper_id))
+        return self.get_by_id(paper_id)
 
 
 def _row_to_paper(row: sqlite3.Row) -> Paper:

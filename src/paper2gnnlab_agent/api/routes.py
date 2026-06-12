@@ -8,6 +8,8 @@ from paper2gnnlab_agent import __version__
 from paper2gnnlab_agent.api.dependencies import get_app_settings, get_paper_service
 from paper2gnnlab_agent.core.config import Settings
 from paper2gnnlab_agent.models.paper import PaperDetailResponse, PaperUploadResponse
+from paper2gnnlab_agent.models.parsed import ParsePaperRequest, ParsePaperResponse
+from paper2gnnlab_agent.parsers.pdf import PdfParsingError
 from paper2gnnlab_agent.services.papers import (
     InvalidPaperUploadError,
     PaperIngestionService,
@@ -58,4 +60,24 @@ def get_paper(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Paper not found.",
+        ) from exc
+
+
+@router.post("/papers/{paper_id}/parse", response_model=ParsePaperResponse, tags=["papers"])
+def parse_paper(
+    paper_id: str,
+    request: ParsePaperRequest,
+    service: PaperServiceDep,
+) -> ParsePaperResponse:
+    try:
+        return service.parse_pdf(paper_id=paper_id, force=request.force)
+    except PaperNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Paper not found.",
+        ) from exc
+    except PdfParsingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
         ) from exc

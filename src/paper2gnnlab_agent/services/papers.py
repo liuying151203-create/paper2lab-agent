@@ -1,7 +1,9 @@
 """Paper upload, hash reuse, and metadata lookup workflows."""
 
 import hashlib
+import json
 from datetime import UTC, datetime
+from pathlib import Path
 
 from paper2gnnlab_agent.models.paper import (
     Paper,
@@ -9,6 +11,8 @@ from paper2gnnlab_agent.models.paper import (
     PaperDetailResponse,
     PaperUploadResponse,
 )
+from paper2gnnlab_agent.models.parsed import ParsedPaper, ParsePaperResponse
+from paper2gnnlab_agent.parsers.pdf import PdfParser, PdfParsingError, PypdfParser
 from paper2gnnlab_agent.storage.paper_repository import PaperRepository
 from paper2gnnlab_agent.storage.paths import StoragePaths
 
@@ -24,9 +28,15 @@ class InvalidPaperUploadError(ValueError):
 class PaperIngestionService:
     """Coordinate PDF upload, file hash reuse, and metadata persistence."""
 
-    def __init__(self, repository: PaperRepository, paths: StoragePaths) -> None:
+    def __init__(
+        self,
+        repository: PaperRepository,
+        paths: StoragePaths,
+        parser: PdfParser | None = None,
+    ) -> None:
         self.repository = repository
         self.paths = paths
+        self.parser = parser or PypdfParser()
 
     def upload_pdf(self, filename: str, content: bytes) -> PaperUploadResponse:
         """Persist a new PDF or reuse an existing paper by SHA-256 hash."""
@@ -85,12 +95,57 @@ class PaperIngestionService:
         )
         return PaperDetailResponse(**paper.model_dump(), artifacts=artifacts)
 
+    def parse_pdf(self, paper_id: str, force: bool = False) -> ParsePaperResponse:
+        """Extract page-level PDF text and persist the parsed artifact."""
+
+        paper = self.repository.get_by_id(paper_id)
+        if paper is None:
+            raise PaperNotFoundError(paper_id)
+
+        parsed_path = self._parsed_path(paper_id)
+        if parsed_path.exists() and not force:
+            parsed = _read_parsed_paper(parsed_path)
+            return ParsePaperResponse(
+                paper_id=paper_id,
+                status=paper.status,
+                pages_count=len(parsed.pages),
+                reused=True,
+            )
+
+        self.repository.update_status(paper_id, "parsing")
+        try:
+            pages = self.parser.parse_pages(Path(paper.source_path))
+            parsed = ParsedPaper(
+                paper_id=paper_id,
+                pages=pages,
+                parser=self.parser.name,
+                parsed_at=datetime.now(UTC),
+            )
+            self.paths.parsed_dir.mkdir(parents=True, exist_ok=True)
+            parsed_path.write_text(
+                parsed.model_dump_json(indent=2),
+                encoding="utf-8",
+            )
+            updated = self.repository.update_status(paper_id, "parsed")
+            return ParsePaperResponse(
+                paper_id=paper_id,
+                status=updated.status if updated else "parsed",
+                pages_count=len(pages),
+                reused=False,
+            )
+        except PdfParsingError as exc:
+            self.repository.update_status(paper_id, "failed", error_message=str(exc))
+            raise
+
     @staticmethod
     def _validate_pdf(filename: str, content: bytes) -> None:
         if not filename.lower().endswith(".pdf"):
             raise InvalidPaperUploadError("Only PDF files are supported.")
         if not content:
             raise InvalidPaperUploadError("Uploaded PDF is empty.")
+
+    def _parsed_path(self, paper_id: str) -> Path:
+        return self.paths.parsed_dir / f"{paper_id}.json"
 
 
 def compute_file_hash(content: bytes) -> str:
@@ -105,10 +160,14 @@ def build_paper_id(file_hash: str) -> str:
     return f"paper_{file_hash[:12]}"
 
 
-def build_paper_service(repository: PaperRepository, paths: StoragePaths) -> PaperIngestionService:
+def build_paper_service(
+    repository: PaperRepository,
+    paths: StoragePaths,
+    parser: PdfParser | None = None,
+) -> PaperIngestionService:
     """Factory used by API dependencies and tests."""
 
-    return PaperIngestionService(repository=repository, paths=paths)
+    return PaperIngestionService(repository=repository, paths=paths, parser=parser)
 
 
 def _next_actions_for_status(status: str) -> list[str]:
@@ -117,3 +176,7 @@ def _next_actions_for_status(status: str) -> list[str]:
     if status in {"parsed", "chunked"}:
         return ["card"]
     return []
+
+
+def _read_parsed_paper(path: Path) -> ParsedPaper:
+    return ParsedPaper.model_validate(json.loads(path.read_text(encoding="utf-8")))

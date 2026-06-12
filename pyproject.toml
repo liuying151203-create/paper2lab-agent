@@ -12,6 +12,7 @@ dependencies = [
   "fastapi>=0.115.0",
   "pydantic>=2.8.0",
   "pydantic-settings>=2.4.0",
+  "pypdf>=6.0.0",
   "python-dotenv>=1.0.1",
   "python-multipart>=0.0.9",
   "streamlit>=1.37.0",

@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from paper2gnnlab_agent.models.parsed import ParsedPage
 from paper2gnnlab_agent.services.papers import (
     PaperIngestionService,
     build_paper_id,
@@ -9,8 +10,18 @@ from paper2gnnlab_agent.storage.paper_repository import PaperRepository
 from paper2gnnlab_agent.storage.paths import StoragePaths
 
 
-def test_upload_pdf_creates_metadata_and_reuses_hash(tmp_path: Path) -> None:
-    paths = StoragePaths(
+class FakeParser:
+    name = "fake"
+
+    def parse_pages(self, pdf_path: Path) -> list[ParsedPage]:
+        return [
+            ParsedPage(page=1, text=f"parsed from {pdf_path.name}"),
+            ParsedPage(page=2, text="GNN method details"),
+        ]
+
+
+def make_paths(tmp_path: Path) -> StoragePaths:
+    return StoragePaths(
         data_dir=tmp_path,
         papers_dir=tmp_path / "papers",
         parsed_dir=tmp_path / "parsed",
@@ -20,6 +31,10 @@ def test_upload_pdf_creates_metadata_and_reuses_hash(tmp_path: Path) -> None:
         generated_projects_dir=tmp_path / "generated_projects",
         sqlite_path=tmp_path / "metadata.sqlite3",
     )
+
+
+def test_upload_pdf_creates_metadata_and_reuses_hash(tmp_path: Path) -> None:
+    paths = make_paths(tmp_path)
     service = PaperIngestionService(
         repository=PaperRepository(paths.sqlite_path),
         paths=paths,
@@ -43,3 +58,24 @@ def test_upload_pdf_creates_metadata_and_reuses_hash(tmp_path: Path) -> None:
     detail = service.get_paper_detail(first.paper_id)
     assert detail.status == "uploaded"
     assert detail.artifacts.chunks is False
+
+
+def test_parse_pdf_writes_page_text_and_reuses_artifact(tmp_path: Path) -> None:
+    paths = make_paths(tmp_path)
+    service = PaperIngestionService(
+        repository=PaperRepository(paths.sqlite_path),
+        paths=paths,
+        parser=FakeParser(),
+    )
+    upload = service.upload_pdf("gnn-paper.pdf", b"%PDF-1.4\nminimal test pdf\n")
+
+    parsed = service.parse_pdf(upload.paper_id)
+    reused = service.parse_pdf(upload.paper_id)
+    detail = service.get_paper_detail(upload.paper_id)
+
+    assert parsed.status == "parsed"
+    assert parsed.pages_count == 2
+    assert parsed.reused is False
+    assert reused.reused is True
+    assert detail.status == "parsed"
+    assert (paths.parsed_dir / f"{upload.paper_id}.json").exists()

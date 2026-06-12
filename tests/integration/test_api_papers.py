@@ -4,9 +4,17 @@ from fastapi.testclient import TestClient
 
 from paper2gnnlab_agent.api.app import create_app
 from paper2gnnlab_agent.api.dependencies import get_paper_service
+from paper2gnnlab_agent.models.parsed import ParsedPage
 from paper2gnnlab_agent.services.papers import PaperIngestionService
 from paper2gnnlab_agent.storage.paper_repository import PaperRepository
 from paper2gnnlab_agent.storage.paths import StoragePaths
+
+
+class FakeParser:
+    name = "fake"
+
+    def parse_pages(self, pdf_path: Path) -> list[ParsedPage]:
+        return [ParsedPage(page=1, text=f"parsed from {pdf_path.name}")]
 
 
 def test_api_upload_reuse_and_get_paper(tmp_path: Path) -> None:
@@ -20,7 +28,7 @@ def test_api_upload_reuse_and_get_paper(tmp_path: Path) -> None:
         generated_projects_dir=tmp_path / "generated_projects",
         sqlite_path=tmp_path / "metadata.sqlite3",
     )
-    service = PaperIngestionService(PaperRepository(paths.sqlite_path), paths)
+    service = PaperIngestionService(PaperRepository(paths.sqlite_path), paths, parser=FakeParser())
     app = create_app()
     app.dependency_overrides[get_paper_service] = lambda: service
     client = TestClient(app)
@@ -54,3 +62,16 @@ def test_api_upload_reuse_and_get_paper(tmp_path: Path) -> None:
         "paper_card": False,
         "method_spec": False,
     }
+
+    parsed = client.post(f"/api/v1/papers/{payload['paper_id']}/parse", json={"force": False})
+    assert parsed.status_code == 200
+    assert parsed.json() == {
+        "paper_id": payload["paper_id"],
+        "status": "parsed",
+        "pages_count": 1,
+        "reused": False,
+    }
+
+    reused_parse = client.post(f"/api/v1/papers/{payload['paper_id']}/parse", json={"force": False})
+    assert reused_parse.status_code == 200
+    assert reused_parse.json()["reused"] is True
