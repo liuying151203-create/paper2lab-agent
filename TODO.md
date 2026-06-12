@@ -72,11 +72,12 @@
 
 ### 7. 验证
 
-- [ ] 准备最小样例 PDF。
+- [x] 准备最小样例 PDF 生成器。
 - [ ] 增加上传和 hash 复用测试。
 - [x] 增加 chunk/citation schema 测试。
 - [x] 增加 paper card 字段完整性测试。
 - [x] 增加 QA citation 行为测试。
+- [x] 增加端到端 smoke 脚本。
 
 ## Phase 2：多论文分析与复现规划
 
