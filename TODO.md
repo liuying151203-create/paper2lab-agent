@@ -98,6 +98,7 @@
 - [x] 拆分环境、数据、模型、训练、评估、消融实验。
 - [x] 标记 missing details 和人工确认项。
 - [x] 为高风险复现步骤给出原因和 citations。
+- [x] 在 Streamlit UI 中展示 ReproductionPlan。
 
 ### 3. method_spec.yaml
 

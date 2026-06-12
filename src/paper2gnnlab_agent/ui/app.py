@@ -11,6 +11,7 @@ from paper2gnnlab_agent.core.config import Settings, get_settings
 from paper2gnnlab_agent.models.card import PaperCard
 from paper2gnnlab_agent.models.common import Citation, CitedValue
 from paper2gnnlab_agent.models.comparison import PaperComparisonResponse
+from paper2gnnlab_agent.models.method import ChecklistItem, ReproductionPlan
 from paper2gnnlab_agent.models.paper import PaperDetailResponse
 from paper2gnnlab_agent.services.comparison import SUPPORTED_COMPARISON_DIMENSIONS
 from paper2gnnlab_agent.services.papers import (
@@ -147,6 +148,9 @@ def render_paper_workspace(service: PaperIngestionService, paper_id: str) -> Non
         render_card_panel(service, paper_id)
     with right:
         render_qa_panel(service, paper_id)
+
+    st.divider()
+    render_reproduction_plan_panel(service, paper_id)
 
 
 def render_paper_header(detail: PaperDetailResponse) -> None:
@@ -371,6 +375,82 @@ def render_comparison(response: PaperComparisonResponse) -> None:
     render_citations(response.citations)
 
 
+def render_reproduction_plan_panel(service: PaperIngestionService, paper_id: str) -> None:
+    """Render Phase 2 reproduction checklist generation and review."""
+
+    st.subheader("Reproduction checklist")
+    force = st.checkbox("Force regenerate reproduction plan", value=False)
+    if st.button("Generate ReproductionPlan", type="primary", use_container_width=True):
+        run_action(
+            lambda: service.generate_reproduction_plan(paper_id=paper_id, force=force),
+            success=lambda response: set_last_reproduction_plan(response.model_dump()),
+        )
+
+    response_data = st.session_state.get("last_reproduction_plan")
+    if not response_data or response_data.get("paper_id") != paper_id:
+        st.info("Generate a PaperCard first, then create a reproduction checklist.")
+        return
+
+    render_reproduction_plan(ReproductionPlan.model_validate(response_data["plan"]))
+
+
+def render_reproduction_plan(plan: ReproductionPlan) -> None:
+    """Render a generated reproduction plan as grouped checklist sections."""
+
+    columns = st.columns(3)
+    columns[0].metric("Difficulty", plan.estimated_difficulty)
+    columns[1].metric("Checklist items", _count_checklist_items(plan))
+    columns[2].metric("Generated", plan.generated_at.strftime("%Y-%m-%d %H:%M"))
+
+    st.markdown("**Objective**")
+    st.write(plan.objective)
+
+    sections = [
+        ("Environment", plan.environment),
+        ("Data preparation", plan.data_preparation),
+        ("Model implementation", plan.model_implementation),
+        ("Attack or defense setup", plan.attack_or_defense_setup),
+        ("Training pipeline", plan.training_pipeline),
+        ("Evaluation", plan.evaluation),
+        ("Ablation studies", plan.ablation_studies),
+        ("Risks", plan.risks),
+        ("Missing details", plan.missing_details),
+    ]
+    for title, items in sections:
+        render_checklist_section(title, items)
+
+
+def render_checklist_section(title: str, items: list[ChecklistItem]) -> None:
+    """Render one reproduction checklist section."""
+
+    if not items:
+        return
+    expanded = title in {"Data preparation", "Model implementation"}
+    with st.expander(f"{title} ({len(items)})", expanded=expanded):
+        for item in items:
+            st.markdown(f"**[{item.status}]** {item.item}")
+            if item.rationale:
+                st.caption(item.rationale)
+            render_citations(item.citations)
+
+
+def _count_checklist_items(plan: ReproductionPlan) -> int:
+    return sum(
+        len(items)
+        for items in [
+            plan.environment,
+            plan.data_preparation,
+            plan.model_implementation,
+            plan.attack_or_defense_setup,
+            plan.training_pipeline,
+            plan.evaluation,
+            plan.ablation_studies,
+            plan.risks,
+            plan.missing_details,
+        ]
+    )
+
+
 def _format_comparison_values(values: list[CitedValue]) -> str:
     if not values:
         return ""
@@ -426,6 +506,10 @@ def set_last_qa(response: dict[str, object]) -> None:
 
 def set_last_comparison(response: dict[str, object]) -> None:
     st.session_state["last_comparison"] = response
+
+
+def set_last_reproduction_plan(response: dict[str, object]) -> None:
+    st.session_state["last_reproduction_plan"] = response
 
 
 def _format_paper_option(paper_id: str, papers: list[object]) -> str:
