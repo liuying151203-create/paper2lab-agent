@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 from paper2gnnlab_agent.models.chunk import Chunk
 from paper2gnnlab_agent.models.common import Citation
-from paper2gnnlab_agent.services.qa import ChunkQAService
+from paper2gnnlab_agent.services.qa import ChunkQAService, LlmAnswerComposer
 
 
 def test_chunk_qa_returns_citations_for_matching_evidence() -> None:
@@ -56,6 +56,26 @@ def test_chunk_qa_reports_unsupported_when_no_chunk_matches() -> None:
     assert response.unsupported_claims == ["No chunk matched the question terms."]
 
 
+def test_chunk_qa_can_compose_answer_with_llm_client() -> None:
+    paper_id = "paper_qa123"
+    response = ChunkQAService(answer_composer=LlmAnswerComposer(FakeLlmClient())).answer(
+        paper_id=paper_id,
+        question="What datasets are used?",
+        chunks=[
+            make_chunk(
+                paper_id,
+                "chunk_qa123_0001",
+                1,
+                "experiments",
+                "Experiments use Cora and Citeseer for node classification.",
+            )
+        ],
+    )
+
+    assert response.answer == "The paper evaluates on Cora and Citeseer. [1]"
+    assert response.citations[0].chunk_id == "chunk_qa123_0001"
+
+
 def make_chunk(
     paper_id: str,
     chunk_id: str,
@@ -83,3 +103,10 @@ def make_chunk(
         citation=citation,
         created_at=datetime.now(UTC),
     )
+
+
+class FakeLlmClient:
+    def generate(self, messages: list[dict[str, str]], temperature: float = 0.0) -> str:
+        assert temperature == 0.0
+        assert "Citation evidence" in messages[1]["content"]
+        return "The paper evaluates on Cora and Citeseer. [1]"

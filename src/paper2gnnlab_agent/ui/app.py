@@ -19,6 +19,7 @@ from paper2gnnlab_agent.services.papers import (
     PaperNotFoundError,
     ParsedArtifactNotFoundError,
     build_paper_service,
+    build_qa_service_from_settings,
 )
 from paper2gnnlab_agent.storage.paper_repository import PaperRepository
 from paper2gnnlab_agent.storage.paths import build_storage_paths
@@ -50,7 +51,16 @@ def get_ui_service() -> PaperIngestionService:
     settings = get_settings()
     paths = build_storage_paths(settings)
     repository = PaperRepository(paths.sqlite_path)
-    return build_paper_service(repository=repository, paths=paths)
+    return build_paper_service(
+        repository=repository,
+        paths=paths,
+        qa_service=build_qa_service_from_settings(
+            model_provider=settings.model_provider,
+            model_name=settings.model_name,
+            model_base_url=settings.model_base_url,
+            api_key=settings.api_key,
+        ),
+    )
 
 
 def render_sidebar(service: PaperIngestionService, settings: Settings) -> str | None:
@@ -99,6 +109,8 @@ def render_runtime(settings: Settings) -> None:
         f"v{__version__} | {settings.env} | data: {settings.data_dir} | "
         f"sqlite: {settings.sqlite_path}"
     )
+    model_status = "LLM QA on" if settings.model_provider and settings.api_key else "extractive QA"
+    st.caption(f"mode: {model_status}")
 
 
 def render_paper_workspace(service: PaperIngestionService, paper_id: str) -> None:

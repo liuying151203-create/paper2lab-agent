@@ -25,6 +25,7 @@ class Settings(BaseSettings):
 
     model_provider: str | None = None
     model_name: str | None = None
+    model_base_url: str | None = None
     embedding_model: str | None = None
     api_key: str | None = Field(default=None, repr=False)
 

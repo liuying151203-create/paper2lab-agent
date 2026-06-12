@@ -54,7 +54,8 @@
 ### 6. 单篇论文 QA
 
 - [x] 实现单篇 chunk 检索。
-- [x] 实现 extractive QA 生成策略，后续再接 LLM prompt。
+- [x] 实现 extractive QA 生成策略。
+- [x] 接入可选 LLM answer composer，未配置模型时自动回退 extractive QA。
 - [x] 回答中返回 citations。
 - [x] evidence 不足时返回 unsupported claims。
 - [x] 增加 QA API。

@@ -344,8 +344,10 @@ Query：
 行为：
 
 - 只在指定 `paper_id` 的 chunks 内检索。
-- MVP 使用轻量词项检索和 extractive answer，不调用外部 LLM。
-- 回答只拼接检索到的 chunk evidence，不使用无 citation 的论文事实。
+- 默认使用轻量词项检索和 extractive answer。
+- 若配置 `P2GL_MODEL_PROVIDER`、`P2GL_MODEL_NAME`、`P2GL_API_KEY`，则使用可选 LLM answer composer 将检索到的 evidence 写成简洁回答。
+- LLM composer 只能使用检索到的 citation evidence，不应使用无 citation 的论文事实。
+- LLM 调用失败时自动回退到 extractive answer。
 - 如果找不到足够证据，返回说明性回答并填充 `unsupported_claims`。
 - 若论文尚未 chunk，返回 `409`。
 

@@ -8,10 +8,14 @@ from collections import Counter
 from paper2gnnlab_agent.models.chunk import Chunk
 from paper2gnnlab_agent.models.common import Citation
 from paper2gnnlab_agent.models.qa import PaperQAResponse
+from paper2gnnlab_agent.services.llm import LlmClient, LlmGenerationError
 
 
 class ChunkQAService:
     """Answer questions by retrieving relevant chunks and citing their evidence."""
+
+    def __init__(self, answer_composer: AnswerComposer | None = None) -> None:
+        self.answer_composer = answer_composer or ExtractiveAnswerComposer()
 
     def answer(
         self,
@@ -53,20 +57,78 @@ class ChunkQAService:
             )
 
         citations = [_citation_for_question(chunk, query_terms) for chunk in selected]
+        answer = self.answer_composer.compose(question=question, citations=citations)
+        return PaperQAResponse(
+            paper_id=paper_id,
+            question=question,
+            answer=answer,
+            citations=citations,
+            unsupported_claims=[],
+        )
+
+
+class AnswerComposer:
+    """Compose an answer from already selected citation evidence."""
+
+    def compose(self, question: str, citations: list[Citation]) -> str:
+        raise NotImplementedError
+
+
+class ExtractiveAnswerComposer(AnswerComposer):
+    """Return a conservative evidence-only answer without model calls."""
+
+    def compose(self, question: str, citations: list[Citation]) -> str:
         evidence_summary = " ".join(
             f"[{index}] {citation.evidence_text}"
             for index, citation in enumerate(citations, start=1)
         )
-        return PaperQAResponse(
-            paper_id=paper_id,
-            question=question,
-            answer=(
-                "Based on the retrieved paper chunks, the relevant evidence is: "
-                f"{evidence_summary}"
-            ),
-            citations=citations,
-            unsupported_claims=[],
+        return (
+            "Based on the retrieved paper chunks, the relevant evidence is: "
+            f"{evidence_summary}"
         )
+
+
+class LlmAnswerComposer(AnswerComposer):
+    """Use an LLM to write a concise answer constrained by citation evidence."""
+
+    def __init__(self, client: LlmClient, fallback: AnswerComposer | None = None) -> None:
+        self.client = client
+        self.fallback = fallback or ExtractiveAnswerComposer()
+
+    def compose(self, question: str, citations: list[Citation]) -> str:
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are Paper2GNNLab-Agent, a GNN paper reading assistant. "
+                    "Answer only using the provided citation evidence. "
+                    "Do not introduce paper facts that are not supported by the evidence. "
+                    "Write a concise answer for a researcher who wants to reproduce "
+                    "GNN experiments. "
+                    "When referring to evidence, use bracket markers like [1], [2]."
+                ),
+            },
+            {
+                "role": "user",
+                "content": _build_qa_prompt(question=question, citations=citations),
+            },
+        ]
+        try:
+            return self.client.generate(messages=messages, temperature=0.0)
+        except LlmGenerationError:
+            return self.fallback.compose(question=question, citations=citations)
+
+
+def _build_qa_prompt(question: str, citations: list[Citation]) -> str:
+    evidence = "\n".join(
+        (
+            f"[{index}] paper_id={citation.paper_id}; chunk_id={citation.chunk_id}; "
+            f"page={citation.page}; section={citation.section or 'unknown'}\n"
+            f"{citation.evidence_text}"
+        )
+        for index, citation in enumerate(citations, start=1)
+    )
+    return f"Question: {question}\n\nCitation evidence:\n{evidence}\n\nAnswer:"
 
 
 def _rank_chunks(chunks: list[Chunk], query_terms: list[str]) -> list[tuple[Chunk, float]]:

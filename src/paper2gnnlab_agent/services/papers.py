@@ -24,7 +24,8 @@ from paper2gnnlab_agent.parsers.chunking import TextChunker
 from paper2gnnlab_agent.parsers.cleaning import TextCleaner
 from paper2gnnlab_agent.parsers.pdf import PdfParser, PdfParsingError, PypdfParser
 from paper2gnnlab_agent.services.card_extraction import RuleBasedPaperCardExtractor
-from paper2gnnlab_agent.services.qa import ChunkQAService
+from paper2gnnlab_agent.services.llm import OpenAICompatibleChatClient
+from paper2gnnlab_agent.services.qa import ChunkQAService, LlmAnswerComposer
 from paper2gnnlab_agent.storage.chunk_repository import ChunkRepository
 from paper2gnnlab_agent.storage.paper_repository import PaperRepository
 from paper2gnnlab_agent.storage.paths import StoragePaths
@@ -393,6 +394,27 @@ def build_paper_service(
         card_extractor=card_extractor,
         qa_service=qa_service,
     )
+
+
+def build_qa_service_from_settings(
+    model_provider: str | None,
+    model_name: str | None,
+    model_base_url: str | None,
+    api_key: str | None,
+) -> ChunkQAService:
+    """Build QA service with optional LLM answer composition."""
+
+    if not model_provider or not model_name or not api_key:
+        return ChunkQAService()
+    if model_provider.lower() not in {"openai", "openai_compatible"}:
+        return ChunkQAService()
+
+    client = OpenAICompatibleChatClient(
+        api_key=api_key,
+        model=model_name,
+        base_url=model_base_url or "https://api.openai.com/v1",
+    )
+    return ChunkQAService(answer_composer=LlmAnswerComposer(client))
 
 
 def _next_actions_for_status(status: str) -> list[str]:
