@@ -1,36 +1,324 @@
-"""Streamlit MVP shell for Paper2GNNLab-Agent."""
+"""Streamlit MVP UI for the single-paper Paper2GNNLab-Agent workflow."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
 
 import streamlit as st
 
 from paper2gnnlab_agent import __version__
-from paper2gnnlab_agent.core.config import get_settings
+from paper2gnnlab_agent.core.config import Settings, get_settings
+from paper2gnnlab_agent.models.card import PaperCard
+from paper2gnnlab_agent.models.common import Citation, CitedValue
+from paper2gnnlab_agent.models.paper import PaperDetailResponse
+from paper2gnnlab_agent.services.papers import (
+    ChunksArtifactNotFoundError,
+    CleanedArtifactNotFoundError,
+    InvalidPaperUploadError,
+    PaperIngestionService,
+    PaperNotFoundError,
+    ParsedArtifactNotFoundError,
+    build_paper_service,
+)
+from paper2gnnlab_agent.storage.paper_repository import PaperRepository
+from paper2gnnlab_agent.storage.paths import build_storage_paths
 
 
 def main() -> None:
-    """Render the current Streamlit shell without paper-processing features."""
-
-    settings = get_settings()
+    """Render the Streamlit MVP workbench."""
 
     st.set_page_config(page_title="Paper2GNNLab-Agent", page_icon="P2G", layout="wide")
+    service = get_ui_service()
+    settings = get_settings()
+
     st.title("Paper2GNNLab-Agent")
     st.caption("GNN paper reading and experiment reproduction planning")
 
-    st.info(
-        "MVP shell is ready. Paper upload, parsing, GNN paper cards, and citation QA "
-        "will be added in Phase 1."
+    selected_paper_id = render_sidebar(service, settings)
+    if selected_paper_id is None:
+        st.info("Upload a GNN paper PDF or select a recent paper to start the Phase 1 workflow.")
+        render_runtime(settings)
+        return
+
+    render_paper_workspace(service, selected_paper_id)
+
+
+@st.cache_resource
+def get_ui_service() -> PaperIngestionService:
+    """Build a cached service instance for the Streamlit process."""
+
+    settings = get_settings()
+    paths = build_storage_paths(settings)
+    repository = PaperRepository(paths.sqlite_path)
+    return build_paper_service(repository=repository, paths=paths)
+
+
+def render_sidebar(service: PaperIngestionService, settings: Settings) -> str | None:
+    """Render upload and paper selection controls."""
+
+    with st.sidebar:
+        st.header("Paper")
+        uploaded = st.file_uploader("Upload GNN paper PDF", type=["pdf"])
+        if st.button("Upload", type="primary", disabled=uploaded is None, use_container_width=True):
+            if uploaded is not None:
+                run_action(
+                    lambda: service.upload_pdf(uploaded.name, uploaded.getvalue()),
+                    success=lambda response: (
+                        set_selected_paper(response.paper_id),
+                        st.success(
+                            f"{'Reused' if response.reused else 'Uploaded'} {response.paper_id}"
+                        ),
+                    ),
+                )
+
+        recent_papers = service.repository.list_recent(limit=30)
+        options = [paper.paper_id for paper in recent_papers]
+        current = st.session_state.get("selected_paper_id")
+        if options:
+            index = options.index(current) if current in options else 0
+            selected = st.selectbox(
+                "Recent papers",
+                options=options,
+                index=index,
+                format_func=lambda paper_id: _format_paper_option(paper_id, recent_papers),
+            )
+            set_selected_paper(selected)
+        elif current:
+            st.text_input("Selected paper", value=current, disabled=True)
+
+        st.divider()
+        render_runtime(settings)
+
+    return st.session_state.get("selected_paper_id")
+
+
+def render_runtime(settings: Settings) -> None:
+    """Show local runtime details."""
+
+    st.caption(
+        f"v{__version__} | {settings.env} | data: {settings.data_dir} | "
+        f"sqlite: {settings.sqlite_path}"
     )
 
-    st.subheader("Runtime")
-    st.json(
-        {
-            "version": __version__,
-            "env": settings.env,
-            "api_host": settings.api_host,
-            "api_port": settings.api_port,
-            "data_dir": str(settings.data_dir),
-            "sqlite_path": str(settings.sqlite_path),
-        }
+
+def render_paper_workspace(service: PaperIngestionService, paper_id: str) -> None:
+    """Render the processing pipeline, card view, and QA panel."""
+
+    try:
+        detail = service.get_paper_detail(paper_id)
+    except PaperNotFoundError:
+        st.error("Selected paper no longer exists in metadata storage.")
+        return
+
+    render_paper_header(detail)
+    render_pipeline(service, paper_id)
+    st.divider()
+
+    left, right = st.columns([1.05, 0.95], gap="large")
+    with left:
+        render_card_panel(service, paper_id)
+    with right:
+        render_qa_panel(service, paper_id)
+
+
+def render_paper_header(detail: PaperDetailResponse) -> None:
+    """Render paper metadata and artifact readiness."""
+
+    st.subheader(detail.filename)
+    columns = st.columns(5)
+    columns[0].metric("Status", detail.status)
+    columns[1].metric("Parsed", "yes" if detail.artifacts.parsed else "no")
+    columns[2].metric("Cleaned", "yes" if detail.artifacts.cleaned else "no")
+    columns[3].metric("Chunks", "yes" if detail.artifacts.chunks else "no")
+    columns[4].metric("Card", "yes" if detail.artifacts.paper_card else "no")
+    st.code(detail.paper_id, language=None)
+
+
+def render_pipeline(service: PaperIngestionService, paper_id: str) -> None:
+    """Render Phase 1 workflow actions."""
+
+    st.subheader("Workflow")
+    force = st.checkbox("Force regenerate artifacts", value=False)
+    col_parse, col_chunk, col_card = st.columns(3)
+
+    with col_parse:
+        if st.button("Parse and clean PDF", use_container_width=True):
+            run_action(
+                lambda: service.parse_pdf(paper_id, force=force),
+                success=lambda response: st.success(
+                    f"Parsed {response.pages_count} pages; status={response.status}"
+                ),
+            )
+
+    with col_chunk:
+        max_chars = st.number_input(
+            "Chunk max chars",
+            min_value=400,
+            max_value=4000,
+            value=1800,
+            step=100,
+        )
+        if st.button("Generate chunks", use_container_width=True):
+            run_action(
+                lambda: service.generate_chunks(paper_id, force=force, max_chars=int(max_chars)),
+                success=lambda response: st.success(
+                    f"{'Reused' if response.reused else 'Generated'} "
+                    f"{response.chunks_count} chunks"
+                ),
+            )
+
+    with col_card:
+        if st.button("Generate PaperCard", use_container_width=True):
+            run_action(
+                lambda: service.generate_paper_card(paper_id, force=force),
+                success=lambda response: st.success(
+                    f"{'Reused' if response.reused else 'Generated'} PaperCard"
+                ),
+            )
+
+
+def render_card_panel(service: PaperIngestionService, paper_id: str) -> None:
+    """Render a generated GNN PaperCard."""
+
+    st.subheader("GNN PaperCard")
+    try:
+        card = service.get_paper_card(paper_id).card
+    except (PaperNotFoundError, ChunksArtifactNotFoundError):
+        st.info("Generate a PaperCard after chunking the paper.")
+        return
+    except Exception as exc:  # noqa: BLE001
+        st.warning(f"PaperCard is not ready: {exc}")
+        return
+
+    render_card(card)
+
+
+def render_card(card: PaperCard) -> None:
+    """Render core PaperCard fields with citations."""
+
+    if card.problem:
+        render_cited_value("Problem", card.problem)
+
+    sections = [
+        ("Task type", card.task_type),
+        ("Graph type", card.graph_type),
+        ("Datasets", card.datasets),
+        ("Node types", card.node_types),
+        ("Edge types", card.edge_types),
+        ("Model modules", card.model_modules),
+        ("Losses", card.losses),
+        ("Attacks", card.attacks),
+        ("Defenses", card.defenses),
+        ("Metrics", card.metrics),
+        ("Baselines", card.baselines),
+        ("Training setup", card.training_setup),
+        ("Evaluation protocol", card.evaluation_protocol),
+        ("Main results", card.main_results),
+        ("Limitations", card.limitations),
+        ("Missing implementation details", card.missing_implementation_details),
+    ]
+    for title, values in sections:
+        render_cited_values(title, values)
+
+    st.markdown("**Reproduction difficulty**")
+    st.write(card.reproduction_difficulty.level)
+    for reason in card.reproduction_difficulty.reasons:
+        render_cited_value("Reason", reason)
+
+
+def render_cited_values(title: str, values: list[CitedValue]) -> None:
+    """Render a list of citation-backed values."""
+
+    if not values:
+        return
+    st.markdown(f"**{title}**")
+    for value in values:
+        render_cited_value("", value)
+
+
+def render_cited_value(title: str, value: CitedValue) -> None:
+    """Render one citation-backed value."""
+
+    label = f"{title}: {value.value}" if title else value.value
+    st.write(label)
+    render_citations(value.citations)
+
+
+def render_qa_panel(service: PaperIngestionService, paper_id: str) -> None:
+    """Render citation-backed single-paper QA."""
+
+    st.subheader("Single-paper QA")
+    question = st.text_area(
+        "Question",
+        placeholder="What datasets, metrics, and baselines are used?",
+        height=100,
     )
+    top_k = st.slider("Top-k chunks", min_value=1, max_value=10, value=6)
+    if st.button("Ask", type="primary", use_container_width=True, disabled=not question.strip()):
+        run_action(
+            lambda: service.answer_question(paper_id, question=question.strip(), top_k=top_k),
+            success=lambda response: set_last_qa(response.model_dump()),
+        )
+
+    response = st.session_state.get("last_qa")
+    if response and response.get("paper_id") == paper_id:
+        st.markdown("**Answer**")
+        st.write(response["answer"])
+        if response["unsupported_claims"]:
+            st.warning("; ".join(response["unsupported_claims"]))
+        render_citations([Citation.model_validate(item) for item in response["citations"]])
+
+
+def render_citations(citations: list[Citation]) -> None:
+    """Render citations in expandable evidence blocks."""
+
+    if not citations:
+        return
+    for citation in citations:
+        label = (
+            f"{citation.chunk_id}"
+            f" | page {citation.page if citation.page is not None else '?'}"
+            f" | {citation.section or 'unknown'}"
+        )
+        with st.expander(label):
+            st.write(citation.evidence_text)
+
+
+def run_action(action: Callable[[], object], success: Callable[[object], None]) -> None:
+    """Run a service action and surface expected workflow errors."""
+
+    try:
+        result = action()
+    except InvalidPaperUploadError as exc:
+        st.error(str(exc))
+    except ParsedArtifactNotFoundError:
+        st.error("Parse the PDF before cleaning.")
+    except CleanedArtifactNotFoundError:
+        st.error("Clean the paper before generating chunks.")
+    except ChunksArtifactNotFoundError:
+        st.error("Generate chunks before this action.")
+    except PaperNotFoundError:
+        st.error("Paper not found.")
+    except Exception as exc:  # noqa: BLE001
+        st.exception(exc)
+    else:
+        success(result)
+        st.rerun()
+
+
+def set_selected_paper(paper_id: str) -> None:
+    st.session_state["selected_paper_id"] = paper_id
+
+
+def set_last_qa(response: dict[str, object]) -> None:
+    st.session_state["last_qa"] = response
+
+
+def _format_paper_option(paper_id: str, papers: list[object]) -> str:
+    for paper in papers:
+        if getattr(paper, "paper_id", None) == paper_id:
+            return f"{paper.filename} | {paper.status} | {paper.paper_id}"
+    return paper_id
 
 
 if __name__ == "__main__":

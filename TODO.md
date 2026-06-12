@@ -58,7 +58,16 @@
 - [x] 回答中返回 citations。
 - [x] evidence 不足时返回 unsupported claims。
 - [x] 增加 QA API。
-- [ ] 增加 Streamlit QA UI。
+- [x] 增加 Streamlit QA UI。
+
+### 8. Streamlit MVP UI
+
+- [x] 支持 PDF 上传和 hash 复用反馈。
+- [x] 支持选择最近处理的论文。
+- [x] 支持触发 parse/clean、chunk、PaperCard。
+- [x] 展示 artifact readiness 和处理状态。
+- [x] 展示 GNN PaperCard 与 citations。
+- [x] 支持单篇 QA 输入和 citation evidence 展示。
 
 ### 7. 验证
 

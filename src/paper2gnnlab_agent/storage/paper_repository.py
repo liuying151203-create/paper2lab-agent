@@ -28,6 +28,18 @@ class PaperRepository:
             row = connection.execute(query, (file_hash,)).fetchone()
         return _row_to_paper(row) if row else None
 
+    def list_recent(self, limit: int = 20) -> list[Paper]:
+        """Return recently updated papers for local UI selection."""
+
+        query = """
+        SELECT * FROM papers
+        ORDER BY updated_at DESC
+        LIMIT ?
+        """
+        with connect(self.sqlite_path) as connection:
+            rows = connection.execute(query, (limit,)).fetchall()
+        return [_row_to_paper(row) for row in rows]
+
     def create(self, paper: Paper) -> Paper:
         query = """
         INSERT INTO papers (
