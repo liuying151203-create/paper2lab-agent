@@ -2,13 +2,25 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from typing import Protocol
 
 from paper2gnnlab_agent.models.card import PaperCard, ReproductionDifficulty
 from paper2gnnlab_agent.models.chunk import Chunk
 from paper2gnnlab_agent.models.common import Citation, CitedValue
+from paper2gnnlab_agent.services.llm import LlmClient, LlmGenerationError
+
+
+class PaperCardExtractor(Protocol):
+    """Build a PaperCard from citation-ready chunks."""
+
+    name: str
+
+    def extract(self, paper_id: str, chunks: list[Chunk]) -> PaperCard:
+        """Build a citation-backed paper card."""
 
 
 class RuleBasedPaperCardExtractor:
@@ -42,6 +54,165 @@ class RuleBasedPaperCardExtractor:
             missing_implementation_details=_extract_missing_details(chunks),
             generated_at=datetime.now(UTC),
         )
+
+
+class LlmPaperCardExtractor:
+    """Use an LLM to produce a structured GNN PaperCard JSON with fallback."""
+
+    name = "llm"
+
+    def __init__(
+        self,
+        client: LlmClient,
+        fallback: PaperCardExtractor | None = None,
+        max_chunks: int = 24,
+    ) -> None:
+        self.client = client
+        self.fallback = fallback or RuleBasedPaperCardExtractor()
+        self.max_chunks = max_chunks
+
+    def extract(self, paper_id: str, chunks: list[Chunk]) -> PaperCard:
+        if not chunks:
+            return self.fallback.extract(paper_id=paper_id, chunks=chunks)
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are Paper2GNNLab-Agent, a GNN paper reading assistant. "
+                    "Extract a structured PaperCard for experiment reproduction. "
+                    "Use only the provided chunk evidence. "
+                    "Every non-empty factual field must include citations copied from "
+                    "the provided evidence. Return only valid JSON."
+                ),
+            },
+            {
+                "role": "user",
+                "content": _build_card_prompt(paper_id=paper_id, chunks=chunks[: self.max_chunks]),
+            },
+        ]
+        try:
+            response = self.client.generate(messages=messages, temperature=0.0)
+            return _paper_card_from_llm_json(
+                paper_id=paper_id,
+                response=response,
+                chunks=chunks,
+            )
+        except (LlmGenerationError, ValueError, TypeError, json.JSONDecodeError):
+            return self.fallback.extract(paper_id=paper_id, chunks=chunks)
+
+
+def _build_card_prompt(paper_id: str, chunks: list[Chunk]) -> str:
+    evidence = "\n\n".join(
+        (
+            f"chunk_id: {chunk.chunk_id}\n"
+            f"page: {chunk.page_start}\n"
+            f"section: {chunk.section or 'unknown'}\n"
+            f"citation: {chunk.citation.model_dump_json()}\n"
+            f"text: {chunk.text[:1800]}"
+        )
+        for chunk in chunks
+    )
+    schema_hint = {
+        "paper_id": paper_id,
+        "title": None,
+        "problem": None,
+        "task_type": [],
+        "graph_type": [],
+        "datasets": [],
+        "node_types": [],
+        "edge_types": [],
+        "model_modules": [],
+        "losses": [],
+        "attacks": [],
+        "defenses": [],
+        "metrics": [],
+        "baselines": [],
+        "training_setup": [],
+        "evaluation_protocol": [],
+        "main_results": [],
+        "limitations": [],
+        "reproduction_difficulty": {"level": "unknown", "reasons": []},
+        "missing_implementation_details": [],
+    }
+    return (
+        "Extract a GNN-specific PaperCard JSON.\n"
+        "Use CitedValue objects shaped as "
+        '{"value": "...", "confidence": "high|medium|low|unknown", "citations": [...]}.\n'
+        "Use only citation objects copied from the evidence block.\n"
+        "If evidence is missing, leave the field empty or use confidence='unknown'.\n"
+        f"JSON shape:\n{json.dumps(schema_hint, ensure_ascii=False, indent=2)}\n\n"
+        f"Evidence:\n{evidence}\n\n"
+        "Return JSON only, no markdown."
+    )
+
+
+def _paper_card_from_llm_json(
+    paper_id: str,
+    response: str,
+    chunks: list[Chunk],
+) -> PaperCard:
+    payload = _extract_json_object(response)
+    payload["paper_id"] = paper_id
+    payload.setdefault("generated_at", datetime.now(UTC).isoformat())
+    payload.setdefault("reproduction_difficulty", {"level": "unknown", "reasons": []})
+    for field_name in PAPER_CARD_LIST_FIELDS:
+        payload.setdefault(field_name, [])
+
+    card = PaperCard.model_validate(payload)
+    known_chunk_ids = {chunk.chunk_id for chunk in chunks}
+    _drop_unknown_citations(card, known_chunk_ids)
+    return card
+
+
+def _extract_json_object(text: str) -> dict[str, object]:
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        stripped = re.sub(r"^```(?:json)?\s*", "", stripped)
+        stripped = re.sub(r"\s*```$", "", stripped)
+    start = stripped.find("{")
+    end = stripped.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        raise ValueError("LLM response did not contain a JSON object.")
+    parsed = json.loads(stripped[start : end + 1])
+    if not isinstance(parsed, dict):
+        raise TypeError("LLM PaperCard response must be a JSON object.")
+    return parsed
+
+
+def _drop_unknown_citations(card: PaperCard, known_chunk_ids: set[str]) -> None:
+    values: list[CitedValue] = []
+    if card.title:
+        values.append(card.title)
+    if card.problem:
+        values.append(card.problem)
+    for field_name in PAPER_CARD_LIST_FIELDS:
+        values.extend(getattr(card, field_name))
+    values.extend(card.reproduction_difficulty.reasons)
+    for value in values:
+        value.citations = [
+            citation for citation in value.citations if citation.chunk_id in known_chunk_ids
+        ]
+
+
+PAPER_CARD_LIST_FIELDS = [
+    "task_type",
+    "graph_type",
+    "datasets",
+    "node_types",
+    "edge_types",
+    "model_modules",
+    "losses",
+    "attacks",
+    "defenses",
+    "metrics",
+    "baselines",
+    "training_setup",
+    "evaluation_protocol",
+    "main_results",
+    "limitations",
+    "missing_implementation_details",
+]
 
 
 TASK_PATTERNS = {

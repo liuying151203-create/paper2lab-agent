@@ -49,7 +49,7 @@
 - [x] 评估 `reproduction_difficulty`。
 - [x] 输出 `missing_implementation_details`。
 - [x] 保证关键字段带 citations。
-- [ ] 设计 LLM 结构化抽取 prompt。
+- [x] 设计并接入可选 LLM 结构化抽取 prompt，未配置模型时回退规则版。
 
 ### 6. 单篇论文 QA
 

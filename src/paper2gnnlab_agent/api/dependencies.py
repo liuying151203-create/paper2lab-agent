@@ -5,6 +5,7 @@ from functools import lru_cache
 from paper2gnnlab_agent.core.config import Settings, get_settings
 from paper2gnnlab_agent.services.papers import (
     PaperIngestionService,
+    build_card_extractor_from_settings,
     build_paper_service,
     build_qa_service_from_settings,
 )
@@ -27,6 +28,12 @@ def get_paper_service() -> PaperIngestionService:
     return build_paper_service(
         repository=get_paper_repository(),
         paths=get_storage_paths(),
+        card_extractor=build_card_extractor_from_settings(
+            model_provider=settings.model_provider,
+            model_name=settings.model_name,
+            model_base_url=settings.model_base_url,
+            api_key=settings.api_key,
+        ),
         qa_service=build_qa_service_from_settings(
             model_provider=settings.model_provider,
             model_name=settings.model_name,

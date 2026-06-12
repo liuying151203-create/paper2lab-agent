@@ -2,7 +2,10 @@ from datetime import UTC, datetime
 
 from paper2gnnlab_agent.models.chunk import Chunk
 from paper2gnnlab_agent.models.common import Citation
-from paper2gnnlab_agent.services.card_extraction import RuleBasedPaperCardExtractor
+from paper2gnnlab_agent.services.card_extraction import (
+    LlmPaperCardExtractor,
+    RuleBasedPaperCardExtractor,
+)
 
 
 def test_rule_based_card_extractor_finds_gnn_fields_with_citations() -> None:
@@ -43,6 +46,43 @@ def test_rule_based_card_extractor_finds_gnn_fields_with_citations() -> None:
     assert card.task_type[0].citations[0].chunk_id == "chunk_card123_0001"
 
 
+def test_llm_card_extractor_validates_structured_json_with_citations() -> None:
+    paper_id = "paper_card123"
+    chunks = [
+        make_chunk(
+            paper_id,
+            "chunk_card123_0001",
+            1,
+            "abstract",
+            "We study node classification on Cora with a GCN model.",
+        )
+    ]
+
+    card = LlmPaperCardExtractor(FakeCardLlmClient()).extract(paper_id, chunks)
+
+    assert card.paper_id == paper_id
+    assert card.task_type[0].value == "node classification"
+    assert card.datasets[0].value == "Cora"
+    assert card.datasets[0].citations[0].chunk_id == "chunk_card123_0001"
+
+
+def test_llm_card_extractor_falls_back_on_invalid_json() -> None:
+    paper_id = "paper_card123"
+    chunks = [
+        make_chunk(
+            paper_id,
+            "chunk_card123_0001",
+            1,
+            "abstract",
+            "We study node classification on Cora with a GCN model.",
+        )
+    ]
+
+    card = LlmPaperCardExtractor(BrokenCardLlmClient()).extract(paper_id, chunks)
+
+    assert card.task_type[0].value == "node classification"
+
+
 def make_chunk(
     paper_id: str,
     chunk_id: str,
@@ -70,3 +110,50 @@ def make_chunk(
         citation=citation,
         created_at=datetime.now(UTC),
     )
+
+
+class FakeCardLlmClient:
+    def generate(self, messages: list[dict[str, str]], temperature: float = 0.0) -> str:
+        assert temperature == 0.0
+        assert "Evidence:" in messages[1]["content"]
+        return """
+        {
+          "paper_id": "paper_card123",
+          "task_type": [
+            {
+              "value": "node classification",
+              "confidence": "high",
+              "citations": [
+                {
+                  "paper_id": "paper_card123",
+                  "chunk_id": "chunk_card123_0001",
+                  "page": 1,
+                  "section": "abstract",
+                  "evidence_text": "We study node classification on Cora with a GCN model."
+                }
+              ]
+            }
+          ],
+          "datasets": [
+            {
+              "value": "Cora",
+              "confidence": "high",
+              "citations": [
+                {
+                  "paper_id": "paper_card123",
+                  "chunk_id": "chunk_card123_0001",
+                  "page": 1,
+                  "section": "abstract",
+                  "evidence_text": "We study node classification on Cora with a GCN model."
+                }
+              ]
+            }
+          ],
+          "reproduction_difficulty": {"level": "unknown", "reasons": []}
+        }
+        """
+
+
+class BrokenCardLlmClient:
+    def generate(self, messages: list[dict[str, str]], temperature: float = 0.0) -> str:
+        return "not json"

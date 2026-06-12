@@ -23,7 +23,11 @@ from paper2gnnlab_agent.models.qa import PaperQAResponse
 from paper2gnnlab_agent.parsers.chunking import TextChunker
 from paper2gnnlab_agent.parsers.cleaning import TextCleaner
 from paper2gnnlab_agent.parsers.pdf import PdfParser, PdfParsingError, PypdfParser
-from paper2gnnlab_agent.services.card_extraction import RuleBasedPaperCardExtractor
+from paper2gnnlab_agent.services.card_extraction import (
+    LlmPaperCardExtractor,
+    PaperCardExtractor,
+    RuleBasedPaperCardExtractor,
+)
 from paper2gnnlab_agent.services.llm import OpenAICompatibleChatClient
 from paper2gnnlab_agent.services.qa import ChunkQAService, LlmAnswerComposer
 from paper2gnnlab_agent.storage.chunk_repository import ChunkRepository
@@ -49,7 +53,7 @@ class PaperIngestionService:
         parser: PdfParser | None = None,
         cleaner: TextCleaner | None = None,
         chunk_repository: ChunkRepository | None = None,
-        card_extractor: RuleBasedPaperCardExtractor | None = None,
+        card_extractor: PaperCardExtractor | None = None,
         qa_service: ChunkQAService | None = None,
     ) -> None:
         self.repository = repository
@@ -380,7 +384,7 @@ def build_paper_service(
     parser: PdfParser | None = None,
     cleaner: TextCleaner | None = None,
     chunk_repository: ChunkRepository | None = None,
-    card_extractor: RuleBasedPaperCardExtractor | None = None,
+    card_extractor: PaperCardExtractor | None = None,
     qa_service: ChunkQAService | None = None,
 ) -> PaperIngestionService:
     """Factory used by API dependencies and tests."""
@@ -415,6 +419,28 @@ def build_qa_service_from_settings(
         base_url=model_base_url or "https://api.openai.com/v1",
     )
     return ChunkQAService(answer_composer=LlmAnswerComposer(client))
+
+
+def build_card_extractor_from_settings(
+    model_provider: str | None,
+    model_name: str | None,
+    model_base_url: str | None,
+    api_key: str | None,
+) -> PaperCardExtractor:
+    """Build PaperCard extractor with optional LLM structured extraction."""
+
+    fallback = RuleBasedPaperCardExtractor()
+    if not model_provider or not model_name or not api_key:
+        return fallback
+    if model_provider.lower() not in {"openai", "openai_compatible"}:
+        return fallback
+
+    client = OpenAICompatibleChatClient(
+        api_key=api_key,
+        model=model_name,
+        base_url=model_base_url or "https://api.openai.com/v1",
+    )
+    return LlmPaperCardExtractor(client=client, fallback=fallback)
 
 
 def _next_actions_for_status(status: str) -> list[str]:

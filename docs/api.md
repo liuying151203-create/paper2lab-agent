@@ -291,7 +291,10 @@ Query：
 
 行为：
 
-- MVP 先使用规则版抽取器，从 chunks 中抽取 GNN 垂直字段并附带 citations。
+- 默认使用规则版抽取器，从 chunks 中抽取 GNN 垂直字段并附带 citations。
+- 若配置 `P2GL_MODEL_PROVIDER`、`P2GL_MODEL_NAME`、`P2GL_API_KEY`，则使用可选 LLM structured extractor 生成 PaperCard JSON。
+- LLM 输出必须通过 `PaperCard` Pydantic schema 校验，且 citations 必须对应当前论文已有 chunks。
+- LLM 调用失败或 JSON 校验失败时自动回退规则版抽取器。
 - 输出保存到 `data/cards/{paper_id}.json`。
 - 生成成功后 `Paper.status` 更新为 `card_ready`。
 - 若 `force=false` 且 card artifact 已存在，则直接复用。
