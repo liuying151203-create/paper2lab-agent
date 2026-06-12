@@ -72,6 +72,22 @@ class MethodSpec(BaseModel):
     citations: list[Citation] = Field(default_factory=list)
 
 
+class GenerateMethodSpecRequest(BaseModel):
+    """Request body for generating method_spec.yaml."""
+
+    force: bool = False
+
+
+class MethodSpecResponse(BaseModel):
+    """Response returned after generating or reading method_spec.yaml."""
+
+    paper_id: str
+    status: Literal["method_spec_ready"]
+    spec: MethodSpec
+    yaml_path: str
+    reused: bool = False
+
+
 class ChecklistItem(BaseModel):
     item: str
     status: Literal["todo", "blocked", "needs_manual_check"] = "todo"

@@ -26,7 +26,10 @@ from paper2gnnlab_agent.models.comparison import (
 )
 from paper2gnnlab_agent.models.method import (
     ChecklistItem,
+    GenerateMethodSpecRequest,
     GenerateReproductionPlanRequest,
+    MethodSpec,
+    MethodSpecResponse,
     ReproductionPlan,
     ReproductionPlanResponse,
 )
@@ -70,7 +73,10 @@ __all__ = [
     "GeneratePaperCardRequest",
     "GenerateChunksRequest",
     "GenerateChunksResponse",
+    "GenerateMethodSpecRequest",
     "GenerateReproductionPlanRequest",
+    "MethodSpec",
+    "MethodSpecResponse",
     "ParsedPage",
     "ParsedPaper",
     "ParsePaperRequest",

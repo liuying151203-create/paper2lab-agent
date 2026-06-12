@@ -462,11 +462,87 @@ Query：
 - checklist 按 GNN 复现流程拆分为环境、数据准备、模型实现、攻击/防御设置、训练、评估、消融、风险和缺失实现细节。
 - 基于论文内容的 checklist item 必须保留 citations；论文未明确给出的实现细节标记为 `needs_manual_check` 或 `blocked`。
 
-## 12. Phase 2 预留接口
+## 12. Method Spec
 
-- `POST /api/v1/papers/{paper_id}/method-spec`：生成 `method_spec.yaml`。
+### `POST /api/v1/papers/{paper_id}/method-spec`
 
-## 13. Phase 3 预留接口
+用途：基于已生成的 GNN PaperCard，以及可选的 ReproductionPlan，生成模板代码骨架可消费的 `method_spec.yaml`。
+
+请求：
+```json
+{
+  "force": false
+}
+```
+
+响应：
+```json
+{
+  "paper_id": "paper_a1b2c3d4",
+  "status": "method_spec_ready",
+  "reused": false,
+  "yaml_path": "data/specs/paper_a1b2c3d4.yaml",
+  "spec": {
+    "paper_id": "paper_a1b2c3d4",
+    "task_type": ["node classification"],
+    "graph_type": ["homogeneous graph"],
+    "datasets": [
+      {
+        "name": "Cora",
+        "split": null,
+        "preprocessing": ["Acquire and preprocess dataset: Cora."],
+        "citations": []
+      }
+    ],
+    "model_modules": [
+      {
+        "name": "GCN encoder",
+        "role": "gnn_module",
+        "inputs": [],
+        "outputs": [],
+        "citations": []
+      }
+    ],
+    "losses": ["cross entropy"],
+    "attacks": [],
+    "defenses": [],
+    "metrics": ["accuracy"],
+    "baselines": ["GAT"],
+    "training": null,
+    "evaluation": null,
+    "missing_details": [],
+    "citations": []
+  }
+}
+```
+
+行为：
+- 只读取已生成的 `data/cards/{paper_id}.json`。
+- 若存在 `data/specs/{paper_id}.reproduction_plan.json`，会吸收其中的人工确认项、blocked 项和消融项。
+- 输出 `data/specs/{paper_id}.yaml`，同时写入内部 JSON sidecar 用于复用。
+- `force=false` 且 spec 已存在时直接复用，返回 `reused=true`。
+- 若 paper 不存在，返回 `404`。
+- 若 PaperCard 尚未生成，返回 `409`。
+- 不直接生成实验代码；该 spec 只作为 Phase 3 模板代码骨架生成的输入。
+
+### `GET /api/v1/papers/{paper_id}/method-spec.yaml`
+
+用途：下载已生成的 `method_spec.yaml`。
+
+响应：
+- Content-Type: `application/x-yaml`
+- Content-Disposition: `attachment; filename="{paper_id}.yaml"`
+
+行为：
+- 不隐式生成 method spec。
+- 若 paper 不存在，返回 `404`。
+- 若 `method_spec.yaml` 尚未生成，返回 `404`。
+
+## 13. Phase 2 预留接口
+
+- Phase 2 当前已完成多论文对比、复现 checklist 和 `method_spec.yaml`。
+
+## 14. Phase 3 预留接口
 
 - `POST /api/v1/method-specs/{spec_id}/scaffold`：基于模板生成实验项目骨架。
 - `POST /api/v1/graphrag/search`：可选 GraphRAG 联动检索。

@@ -102,11 +102,12 @@
 
 ### 3. method_spec.yaml
 
-- [ ] 定义 MethodSpec 到 YAML 的导出规则。
-- [ ] 从 PaperCard 和 chunks 生成 MethodSpec。
-- [ ] 保留数据集、模型模块、攻击/防御、训练和评估字段。
-- [ ] 将不确定信息写入 `missing_details`。
-- [ ] 增加 `method_spec.yaml` 下载接口。
+- [x] 定义 MethodSpec 到 YAML 的导出规则。
+- [x] 从 PaperCard 和 ReproductionPlan 生成 MethodSpec。
+- [x] 保留数据集、模型模块、攻击/防御、训练和评估字段。
+- [x] 将不确定信息写入 `missing_details`。
+- [x] 增加 `method_spec.yaml` 下载接口。
+- [x] 在 Streamlit UI 中预览和下载 `method_spec.yaml`。
 
 ## Phase 3：实验落地辅助
 

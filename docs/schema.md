@@ -219,6 +219,16 @@ class EvaluationSpec(BaseModel):
     metrics: list[str] = []
     ablations: list[str] = []
     citations: list[Citation] = []
+
+class GenerateMethodSpecRequest(BaseModel):
+    force: bool = False
+
+class MethodSpecResponse(BaseModel):
+    paper_id: str
+    status: Literal["method_spec_ready"]
+    spec: MethodSpec
+    yaml_path: str
+    reused: bool = False
 ```
 
 ## 8. ReproductionPlan
@@ -244,6 +254,15 @@ class ChecklistItem(BaseModel):
     status: Literal["todo", "blocked", "needs_manual_check"] = "todo"
     rationale: str | None = None
     citations: list[Citation] = []
+
+class GenerateReproductionPlanRequest(BaseModel):
+    force: bool = False
+
+class ReproductionPlanResponse(BaseModel):
+    paper_id: str
+    status: Literal["reproduction_plan_ready"]
+    plan: ReproductionPlan
+    reused: bool = False
 ```
 
 ## 9. QA Schema

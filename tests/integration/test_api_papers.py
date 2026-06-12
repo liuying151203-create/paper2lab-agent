@@ -145,6 +145,30 @@ def test_api_upload_reuse_and_get_paper(tmp_path: Path) -> None:
     assert reused_plan.status_code == 200
     assert reused_plan.json()["reused"] is True
 
+    method_spec = client.post(
+        f"/api/v1/papers/{payload['paper_id']}/method-spec",
+        json={"force": False},
+    )
+    assert method_spec.status_code == 200
+    method_payload = method_spec.json()
+    assert method_payload["status"] == "method_spec_ready"
+    assert method_payload["reused"] is False
+    assert method_payload["spec"]["paper_id"] == payload["paper_id"]
+    assert method_payload["spec"]["task_type"] == ["node classification"]
+    assert method_payload["yaml_path"].endswith(f"{payload['paper_id']}.yaml")
+
+    reused_method_spec = client.post(
+        f"/api/v1/papers/{payload['paper_id']}/method-spec",
+        json={"force": False},
+    )
+    assert reused_method_spec.status_code == 200
+    assert reused_method_spec.json()["reused"] is True
+
+    method_yaml = client.get(f"/api/v1/papers/{payload['paper_id']}/method-spec.yaml")
+    assert method_yaml.status_code == 200
+    assert f'paper_id: "{payload["paper_id"]}"' in method_yaml.text
+    assert 'task_type:' in method_yaml.text
+
     qa = client.post(
         f"/api/v1/papers/{payload['paper_id']}/qa",
         json={"question": "What task and dataset are used?", "top_k": 3},

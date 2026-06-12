@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 
 from paper2gnnlab_agent import __version__
 from paper2gnnlab_agent.api.dependencies import get_app_settings, get_paper_service
@@ -22,7 +22,9 @@ from paper2gnnlab_agent.models.comparison import (
     PaperComparisonResponse,
 )
 from paper2gnnlab_agent.models.method import (
+    GenerateMethodSpecRequest,
     GenerateReproductionPlanRequest,
+    MethodSpecResponse,
     ReproductionPlanResponse,
 )
 from paper2gnnlab_agent.models.paper import PaperDetailResponse, PaperUploadResponse
@@ -34,6 +36,7 @@ from paper2gnnlab_agent.services.papers import (
     ChunksArtifactNotFoundError,
     CleanedArtifactNotFoundError,
     InvalidPaperUploadError,
+    MethodSpecArtifactNotFoundError,
     PaperIngestionService,
     PaperNotFoundError,
     ParsedArtifactNotFoundError,
@@ -286,3 +289,51 @@ def generate_reproduction_plan(
             status_code=status.HTTP_409_CONFLICT,
             detail="Paper must have a generated PaperCard before reproduction planning.",
         ) from exc
+
+
+@router.post(
+    "/papers/{paper_id}/method-spec",
+    response_model=MethodSpecResponse,
+    tags=["papers"],
+)
+def generate_method_spec(
+    paper_id: str,
+    request: GenerateMethodSpecRequest,
+    service: PaperServiceDep,
+) -> MethodSpecResponse:
+    try:
+        return service.generate_method_spec(paper_id=paper_id, force=request.force)
+    except PaperNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Paper not found.",
+        ) from exc
+    except CardArtifactNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Paper must have a generated PaperCard before method_spec.yaml.",
+        ) from exc
+
+
+@router.get("/papers/{paper_id}/method-spec.yaml", tags=["papers"])
+def get_method_spec_yaml(
+    paper_id: str,
+    service: PaperServiceDep,
+) -> Response:
+    try:
+        yaml_text = service.get_method_spec_yaml(paper_id=paper_id)
+    except PaperNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Paper not found.",
+        ) from exc
+    except MethodSpecArtifactNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="method_spec.yaml not ready.",
+        ) from exc
+    return Response(
+        content=yaml_text,
+        media_type="application/x-yaml",
+        headers={"Content-Disposition": f'attachment; filename="{paper_id}.yaml"'},
+    )

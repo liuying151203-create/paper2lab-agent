@@ -11,7 +11,7 @@ from paper2gnnlab_agent.core.config import Settings, get_settings
 from paper2gnnlab_agent.models.card import PaperCard
 from paper2gnnlab_agent.models.common import Citation, CitedValue
 from paper2gnnlab_agent.models.comparison import PaperComparisonResponse
-from paper2gnnlab_agent.models.method import ChecklistItem, ReproductionPlan
+from paper2gnnlab_agent.models.method import ChecklistItem, MethodSpec, ReproductionPlan
 from paper2gnnlab_agent.models.paper import PaperDetailResponse
 from paper2gnnlab_agent.services.comparison import SUPPORTED_COMPARISON_DIMENSIONS
 from paper2gnnlab_agent.services.papers import (
@@ -151,6 +151,8 @@ def render_paper_workspace(service: PaperIngestionService, paper_id: str) -> Non
 
     st.divider()
     render_reproduction_plan_panel(service, paper_id)
+    st.divider()
+    render_method_spec_panel(service, paper_id)
 
 
 def render_paper_header(detail: PaperDetailResponse) -> None:
@@ -434,6 +436,47 @@ def render_checklist_section(title: str, items: list[ChecklistItem]) -> None:
             render_citations(item.citations)
 
 
+def render_method_spec_panel(service: PaperIngestionService, paper_id: str) -> None:
+    """Render method_spec.yaml generation, preview, and download."""
+
+    st.subheader("method_spec.yaml")
+    force = st.checkbox("Force regenerate method_spec.yaml", value=False)
+    if st.button("Generate method_spec.yaml", type="primary", use_container_width=True):
+        run_action(
+            lambda: service.generate_method_spec(paper_id=paper_id, force=force),
+            success=lambda response: set_last_method_spec(
+                response.model_dump(),
+                service.get_method_spec_yaml(paper_id),
+            ),
+        )
+
+    response_data = st.session_state.get("last_method_spec")
+    yaml_text = st.session_state.get("last_method_spec_yaml")
+    if not response_data or response_data.get("paper_id") != paper_id or not yaml_text:
+        st.info(
+            "Generate a PaperCard first, optionally generate a ReproductionPlan, "
+            "then export MethodSpec."
+        )
+        return
+
+    spec = MethodSpec.model_validate(response_data["spec"])
+    action = "Reused" if response_data.get("reused") else "Generated"
+    st.caption(f"{action} {response_data['yaml_path']}")
+    columns = st.columns(4)
+    columns[0].metric("Datasets", len(spec.datasets))
+    columns[1].metric("Modules", len(spec.model_modules))
+    columns[2].metric("Metrics", len(spec.metrics))
+    columns[3].metric("Missing details", len(spec.missing_details))
+    st.download_button(
+        "Download YAML",
+        data=yaml_text,
+        file_name=f"{paper_id}.yaml",
+        mime="application/x-yaml",
+        use_container_width=True,
+    )
+    st.code(yaml_text, language="yaml")
+
+
 def _count_checklist_items(plan: ReproductionPlan) -> int:
     return sum(
         len(items)
@@ -510,6 +553,11 @@ def set_last_comparison(response: dict[str, object]) -> None:
 
 def set_last_reproduction_plan(response: dict[str, object]) -> None:
     st.session_state["last_reproduction_plan"] = response
+
+
+def set_last_method_spec(response: dict[str, object], yaml_text: str) -> None:
+    st.session_state["last_method_spec"] = response
+    st.session_state["last_method_spec_yaml"] = yaml_text
 
 
 def _format_paper_option(paper_id: str, papers: list[object]) -> str:

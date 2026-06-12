@@ -13,7 +13,12 @@ from paper2gnnlab_agent.models.chunk import (
 )
 from paper2gnnlab_agent.models.cleaned import CleanedPaper, CleanPaperResponse
 from paper2gnnlab_agent.models.comparison import PaperComparisonResponse
-from paper2gnnlab_agent.models.method import ReproductionPlan, ReproductionPlanResponse
+from paper2gnnlab_agent.models.method import (
+    MethodSpec,
+    MethodSpecResponse,
+    ReproductionPlan,
+    ReproductionPlanResponse,
+)
 from paper2gnnlab_agent.models.paper import (
     Paper,
     PaperArtifacts,
@@ -32,6 +37,7 @@ from paper2gnnlab_agent.services.card_extraction import (
 )
 from paper2gnnlab_agent.services.comparison import PaperComparisonService
 from paper2gnnlab_agent.services.llm import OpenAICompatibleChatClient
+from paper2gnnlab_agent.services.method_spec import MethodSpecService, dump_method_spec_yaml
 from paper2gnnlab_agent.services.qa import ChunkQAService, LlmAnswerComposer
 from paper2gnnlab_agent.services.reproduction import ReproductionChecklistService
 from paper2gnnlab_agent.storage.chunk_repository import ChunkRepository
@@ -61,6 +67,7 @@ class PaperIngestionService:
         qa_service: ChunkQAService | None = None,
         comparison_service: PaperComparisonService | None = None,
         reproduction_service: ReproductionChecklistService | None = None,
+        method_spec_service: MethodSpecService | None = None,
     ) -> None:
         self.repository = repository
         self.paths = paths
@@ -71,6 +78,7 @@ class PaperIngestionService:
         self.qa_service = qa_service or ChunkQAService()
         self.comparison_service = comparison_service or PaperComparisonService()
         self.reproduction_service = reproduction_service or ReproductionChecklistService()
+        self.method_spec_service = method_spec_service or MethodSpecService()
 
     def upload_pdf(self, filename: str, content: bytes) -> PaperUploadResponse:
         """Persist a new PDF or reuse an existing paper by SHA-256 hash."""
@@ -404,6 +412,57 @@ class PaperIngestionService:
             reused=False,
         )
 
+    def generate_method_spec(self, paper_id: str, force: bool = False) -> MethodSpecResponse:
+        """Generate and persist method_spec.yaml from PaperCard and ReproductionPlan."""
+
+        if self.repository.get_by_id(paper_id) is None:
+            raise PaperNotFoundError(paper_id)
+
+        yaml_path = self._method_spec_yaml_path(paper_id)
+        json_path = self._method_spec_json_path(paper_id)
+        if yaml_path.exists() and json_path.exists() and not force:
+            return MethodSpecResponse(
+                paper_id=paper_id,
+                status="method_spec_ready",
+                spec=_read_method_spec(json_path),
+                yaml_path=str(yaml_path),
+                reused=True,
+            )
+
+        card_path = self._card_path(paper_id)
+        if not card_path.exists():
+            raise CardArtifactNotFoundError(paper_id)
+
+        reproduction_plan = None
+        plan_path = self._reproduction_plan_path(paper_id)
+        if plan_path.exists():
+            reproduction_plan = _read_reproduction_plan(plan_path)
+
+        spec = self.method_spec_service.generate(
+            card=_read_paper_card(card_path),
+            reproduction_plan=reproduction_plan,
+        )
+        self.paths.specs_dir.mkdir(parents=True, exist_ok=True)
+        _write_method_spec(json_path=json_path, yaml_path=yaml_path, spec=spec)
+        return MethodSpecResponse(
+            paper_id=paper_id,
+            status="method_spec_ready",
+            spec=spec,
+            yaml_path=str(yaml_path),
+            reused=False,
+        )
+
+    def get_method_spec_yaml(self, paper_id: str) -> str:
+        """Read generated method_spec.yaml without implicit generation."""
+
+        if self.repository.get_by_id(paper_id) is None:
+            raise PaperNotFoundError(paper_id)
+
+        yaml_path = self._method_spec_yaml_path(paper_id)
+        if not yaml_path.exists():
+            raise MethodSpecArtifactNotFoundError(paper_id)
+        return yaml_path.read_text(encoding="utf-8")
+
     @staticmethod
     def _validate_pdf(filename: str, content: bytes) -> None:
         if not filename.lower().endswith(".pdf"):
@@ -425,6 +484,12 @@ class PaperIngestionService:
 
     def _reproduction_plan_path(self, paper_id: str) -> Path:
         return self.paths.specs_dir / f"{paper_id}.reproduction_plan.json"
+
+    def _method_spec_yaml_path(self, paper_id: str) -> Path:
+        return self.paths.specs_dir / f"{paper_id}.yaml"
+
+    def _method_spec_json_path(self, paper_id: str) -> Path:
+        return self.paths.specs_dir / f"{paper_id}.method_spec.json"
 
 
 def compute_file_hash(content: bytes) -> str:
@@ -449,6 +514,7 @@ def build_paper_service(
     qa_service: ChunkQAService | None = None,
     comparison_service: PaperComparisonService | None = None,
     reproduction_service: ReproductionChecklistService | None = None,
+    method_spec_service: MethodSpecService | None = None,
 ) -> PaperIngestionService:
     """Factory used by API dependencies and tests."""
 
@@ -462,6 +528,7 @@ def build_paper_service(
         qa_service=qa_service,
         comparison_service=comparison_service,
         reproduction_service=reproduction_service,
+        method_spec_service=method_spec_service,
     )
 
 
@@ -563,6 +630,15 @@ def _read_reproduction_plan(path: Path) -> ReproductionPlan:
     return ReproductionPlan.model_validate(json.loads(path.read_text(encoding="utf-8")))
 
 
+def _write_method_spec(json_path: Path, yaml_path: Path, spec: MethodSpec) -> None:
+    json_path.write_text(spec.model_dump_json(indent=2), encoding="utf-8")
+    yaml_path.write_text(dump_method_spec_yaml(spec), encoding="utf-8")
+
+
+def _read_method_spec(path: Path) -> MethodSpec:
+    return MethodSpec.model_validate(json.loads(path.read_text(encoding="utf-8")))
+
+
 class ParsedArtifactNotFoundError(ValueError):
     """Raised when cleaning is requested before PDF parsing has produced text."""
 
@@ -577,3 +653,7 @@ class ChunksArtifactNotFoundError(ValueError):
 
 class CardArtifactNotFoundError(ValueError):
     """Raised when a paper card is requested before generation."""
+
+
+class MethodSpecArtifactNotFoundError(ValueError):
+    """Raised when method_spec.yaml is requested before generation."""
