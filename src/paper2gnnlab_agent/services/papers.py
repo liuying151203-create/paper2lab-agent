@@ -31,7 +31,6 @@ from paper2gnnlab_agent.parsers.chunking import TextChunker
 from paper2gnnlab_agent.parsers.cleaning import TextCleaner
 from paper2gnnlab_agent.parsers.pdf import PdfParser, PdfParsingError, PypdfParser
 from paper2gnnlab_agent.services.card_extraction import (
-    LlmPaperCardExtractor,
     PaperCardExtractor,
     RuleBasedPaperCardExtractor,
 )
@@ -566,6 +565,8 @@ def build_card_extractor_from_settings(
         return fallback
     if model_provider.lower() not in {"openai", "openai_compatible"}:
         return fallback
+
+    from paper2gnnlab_agent.services.card_extraction import LlmPaperCardExtractor
 
     client = OpenAICompatibleChatClient(
         api_key=api_key,

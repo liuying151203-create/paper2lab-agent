@@ -13,12 +13,7 @@ from paper2gnnlab_agent.models.common import Citation, CitedValue
 from paper2gnnlab_agent.models.comparison import PaperComparisonResponse
 from paper2gnnlab_agent.models.method import ChecklistItem, MethodSpec, ReproductionPlan
 from paper2gnnlab_agent.models.paper import PaperDetailResponse
-from paper2gnnlab_agent.services.card_extraction import (
-    LlmPaperCardExtractor,
-    RuleBasedPaperCardExtractor,
-)
 from paper2gnnlab_agent.services.comparison import SUPPORTED_COMPARISON_DIMENSIONS
-from paper2gnnlab_agent.services.llm import OpenAICompatibleChatClient
 from paper2gnnlab_agent.services.papers import (
     CardArtifactNotFoundError,
     ChunksArtifactNotFoundError,
@@ -29,7 +24,6 @@ from paper2gnnlab_agent.services.papers import (
     ParsedArtifactNotFoundError,
     build_paper_service,
 )
-from paper2gnnlab_agent.services.qa import ChunkQAService, LlmAnswerComposer
 from paper2gnnlab_agent.storage.paper_repository import PaperRepository
 from paper2gnnlab_agent.storage.paths import build_storage_paths
 
@@ -67,44 +61,7 @@ def get_ui_service() -> PaperIngestionService:
     return build_paper_service(
         repository=repository,
         paths=paths,
-        card_extractor=build_ui_card_extractor(settings),
-        qa_service=build_ui_qa_service(settings),
     )
-
-
-def build_ui_card_extractor(
-    settings: Settings,
-) -> RuleBasedPaperCardExtractor | LlmPaperCardExtractor:
-    """Build the PaperCard extractor directly for the Streamlit process."""
-
-    fallback = RuleBasedPaperCardExtractor()
-    if not _llm_enabled(settings):
-        return fallback
-    client = OpenAICompatibleChatClient(
-        api_key=settings.api_key or "",
-        model=settings.model_name or "",
-        base_url=settings.model_base_url or "https://api.openai.com/v1",
-    )
-    return LlmPaperCardExtractor(client=client, fallback=fallback)
-
-
-def build_ui_qa_service(settings: Settings) -> ChunkQAService:
-    """Build the QA service directly for the Streamlit process."""
-
-    if not _llm_enabled(settings):
-        return ChunkQAService()
-    client = OpenAICompatibleChatClient(
-        api_key=settings.api_key or "",
-        model=settings.model_name or "",
-        base_url=settings.model_base_url or "https://api.openai.com/v1",
-    )
-    return ChunkQAService(answer_composer=LlmAnswerComposer(client))
-
-
-def _llm_enabled(settings: Settings) -> bool:
-    if not settings.model_provider or not settings.model_name or not settings.api_key:
-        return False
-    return settings.model_provider.lower() in {"openai", "openai_compatible"}
 
 
 def render_sidebar(service: PaperIngestionService, settings: Settings) -> str | None:
