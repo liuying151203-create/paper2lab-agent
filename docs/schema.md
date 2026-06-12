@@ -250,7 +250,6 @@ class ChecklistItem(BaseModel):
 
 ```python
 class PaperQARequest(BaseModel):
-    paper_id: str
     question: str
     top_k: int = 6
 
@@ -264,6 +263,7 @@ class PaperQAResponse(BaseModel):
 
 约束：
 
+- `paper_id` 来自 `POST /api/v1/papers/{paper_id}/qa` 路径参数，不放在请求体里。
 - `answer` 中不能包含没有 evidence 支撑的确定性论文事实。
 - evidence 不足时，写入 `unsupported_claims`，并在回答中说明无法从当前论文内容确认。
 

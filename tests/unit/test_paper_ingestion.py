@@ -92,6 +92,7 @@ def test_parse_pdf_writes_page_text_cleans_text_and_reuses_artifacts(tmp_path: P
     listed_chunks = service.list_chunks(upload.paper_id)
     card = service.generate_paper_card(upload.paper_id)
     reused_card = service.get_paper_card(upload.paper_id)
+    qa = service.answer_question(upload.paper_id, "What task and dataset are used?", top_k=2)
     detail = service.get_paper_detail(upload.paper_id)
 
     assert parsed.status == "cleaned"
@@ -108,6 +109,8 @@ def test_parse_pdf_writes_page_text_cleans_text_and_reuses_artifacts(tmp_path: P
     assert card.card.task_type[0].value == "node classification"
     assert card.card.task_type[0].citations[0].paper_id == upload.paper_id
     assert reused_card.reused is True
+    assert qa.citations
+    assert qa.citations[0].paper_id == upload.paper_id
     assert detail.status == "card_ready"
     assert detail.artifacts.parsed is True
     assert detail.artifacts.cleaned is True

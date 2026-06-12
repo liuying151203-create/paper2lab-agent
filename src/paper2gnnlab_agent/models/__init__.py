@@ -32,6 +32,7 @@ from paper2gnnlab_agent.models.parsed import (
     ParsePaperRequest,
     ParsePaperResponse,
 )
+from paper2gnnlab_agent.models.qa import PaperQARequest, PaperQAResponse
 
 __all__ = [
     "Citation",
@@ -47,6 +48,8 @@ __all__ = [
     "PaperCard",
     "PaperCardResponse",
     "PaperDetailResponse",
+    "PaperQARequest",
+    "PaperQAResponse",
     "PaperStatus",
     "PaperUploadResponse",
     "GeneratePaperCardRequest",

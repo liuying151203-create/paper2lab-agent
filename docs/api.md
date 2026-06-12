@@ -344,8 +344,10 @@ Query：
 行为：
 
 - 只在指定 `paper_id` 的 chunks 内检索。
-- 回答不能使用无 citation 的论文事实。
-- 如果找不到足够证据，返回部分回答并填充 `unsupported_claims`。
+- MVP 使用轻量词项检索和 extractive answer，不调用外部 LLM。
+- 回答只拼接检索到的 chunk evidence，不使用无 citation 的论文事实。
+- 如果找不到足够证据，返回说明性回答并填充 `unsupported_claims`。
+- 若论文尚未 chunk，返回 `409`。
 
 ## 10. Phase 2 预留接口
 

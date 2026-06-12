@@ -19,6 +19,7 @@ from paper2gnnlab_agent.models.chunk import (
 from paper2gnnlab_agent.models.cleaned import CleanPaperRequest, CleanPaperResponse
 from paper2gnnlab_agent.models.paper import PaperDetailResponse, PaperUploadResponse
 from paper2gnnlab_agent.models.parsed import ParsePaperRequest, ParsePaperResponse
+from paper2gnnlab_agent.models.qa import PaperQARequest, PaperQAResponse
 from paper2gnnlab_agent.parsers.pdf import PdfParsingError
 from paper2gnnlab_agent.services.papers import (
     CardArtifactNotFoundError,
@@ -206,4 +207,28 @@ def get_paper_card(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Card not ready.",
+        ) from exc
+
+
+@router.post("/papers/{paper_id}/qa", response_model=PaperQAResponse, tags=["papers"])
+def answer_paper_question(
+    paper_id: str,
+    request: PaperQARequest,
+    service: PaperServiceDep,
+) -> PaperQAResponse:
+    try:
+        return service.answer_question(
+            paper_id=paper_id,
+            question=request.question,
+            top_k=request.top_k,
+        )
+    except PaperNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Paper not found.",
+        ) from exc
+    except ChunksArtifactNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Paper must be chunked before QA.",
         ) from exc

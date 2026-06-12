@@ -53,11 +53,12 @@
 
 ### 6. 单篇论文 QA
 
-- [ ] 实现单篇 chunk 检索。
-- [ ] 实现 QA prompt。
-- [ ] 回答中返回 citations。
-- [ ] evidence 不足时返回 unsupported claims。
-- [ ] 增加 QA API 和 Streamlit UI。
+- [x] 实现单篇 chunk 检索。
+- [x] 实现 extractive QA 生成策略，后续再接 LLM prompt。
+- [x] 回答中返回 citations。
+- [x] evidence 不足时返回 unsupported claims。
+- [x] 增加 QA API。
+- [ ] 增加 Streamlit QA UI。
 
 ### 7. 验证
 
@@ -65,7 +66,7 @@
 - [ ] 增加上传和 hash 复用测试。
 - [x] 增加 chunk/citation schema 测试。
 - [x] 增加 paper card 字段完整性测试。
-- [ ] 增加 QA citation 行为测试。
+- [x] 增加 QA citation 行为测试。
 
 ## Phase 2：多论文分析与复现规划
 

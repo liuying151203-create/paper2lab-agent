@@ -19,10 +19,12 @@ from paper2gnnlab_agent.models.paper import (
     PaperUploadResponse,
 )
 from paper2gnnlab_agent.models.parsed import ParsedPaper, ParsePaperResponse
+from paper2gnnlab_agent.models.qa import PaperQAResponse
 from paper2gnnlab_agent.parsers.chunking import TextChunker
 from paper2gnnlab_agent.parsers.cleaning import TextCleaner
 from paper2gnnlab_agent.parsers.pdf import PdfParser, PdfParsingError, PypdfParser
 from paper2gnnlab_agent.services.card_extraction import RuleBasedPaperCardExtractor
+from paper2gnnlab_agent.services.qa import ChunkQAService
 from paper2gnnlab_agent.storage.chunk_repository import ChunkRepository
 from paper2gnnlab_agent.storage.paper_repository import PaperRepository
 from paper2gnnlab_agent.storage.paths import StoragePaths
@@ -47,6 +49,7 @@ class PaperIngestionService:
         cleaner: TextCleaner | None = None,
         chunk_repository: ChunkRepository | None = None,
         card_extractor: RuleBasedPaperCardExtractor | None = None,
+        qa_service: ChunkQAService | None = None,
     ) -> None:
         self.repository = repository
         self.paths = paths
@@ -54,6 +57,7 @@ class PaperIngestionService:
         self.cleaner = cleaner or TextCleaner()
         self.chunk_repository = chunk_repository or ChunkRepository(repository.sqlite_path)
         self.card_extractor = card_extractor or RuleBasedPaperCardExtractor()
+        self.qa_service = qa_service or ChunkQAService()
 
     def upload_pdf(self, filename: str, content: bytes) -> PaperUploadResponse:
         """Persist a new PDF or reuse an existing paper by SHA-256 hash."""
@@ -319,6 +323,24 @@ class PaperIngestionService:
             reused=True,
         )
 
+    def answer_question(self, paper_id: str, question: str, top_k: int = 6) -> PaperQAResponse:
+        """Answer a single-paper question using only local chunk evidence."""
+
+        if self.repository.get_by_id(paper_id) is None:
+            raise PaperNotFoundError(paper_id)
+
+        chunks_path = self._chunks_path(paper_id)
+        if not chunks_path.exists():
+            raise ChunksArtifactNotFoundError(paper_id)
+
+        chunks = _read_chunks(chunks_path)
+        return self.qa_service.answer(
+            paper_id=paper_id,
+            question=question,
+            chunks=chunks,
+            top_k=top_k,
+        )
+
     @staticmethod
     def _validate_pdf(filename: str, content: bytes) -> None:
         if not filename.lower().endswith(".pdf"):
@@ -358,6 +380,7 @@ def build_paper_service(
     cleaner: TextCleaner | None = None,
     chunk_repository: ChunkRepository | None = None,
     card_extractor: RuleBasedPaperCardExtractor | None = None,
+    qa_service: ChunkQAService | None = None,
 ) -> PaperIngestionService:
     """Factory used by API dependencies and tests."""
 
@@ -368,6 +391,7 @@ def build_paper_service(
         cleaner=cleaner,
         chunk_repository=chunk_repository,
         card_extractor=card_extractor,
+        qa_service=qa_service,
     )
 
 
