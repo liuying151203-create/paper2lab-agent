@@ -36,11 +36,11 @@ class RuleBasedPaperCardExtractor:
             title=None,
             problem=_extract_problem(chunks),
             task_type=_extract_keyword_values(chunks, TASK_PATTERNS),
-            graph_type=_extract_keyword_values(chunks, GRAPH_PATTERNS),
-            datasets=_extract_keyword_values(chunks, DATASET_PATTERNS),
-            node_types=_extract_list_after_label(chunks, r"node types?\s*(?:are|:)\s*([^.;\n]+)"),
-            edge_types=_extract_list_after_label(chunks, r"edge types?\s*(?:are|:)\s*([^.;\n]+)"),
-            model_modules=_extract_keyword_values(chunks, MODEL_PATTERNS),
+            graph_type=_extract_graph_types(chunks),
+            datasets=_extract_dataset_values(chunks),
+            node_types=_extract_node_types(chunks),
+            edge_types=_extract_edge_types(chunks),
+            model_modules=_extract_keyword_values(_ordered_chunks(chunks), MODEL_PATTERNS),
             losses=_extract_keyword_values(chunks, LOSS_PATTERNS),
             attacks=_extract_keyword_values(chunks, ATTACK_PATTERNS),
             defenses=_extract_keyword_values(chunks, DEFENSE_PATTERNS),
@@ -217,6 +217,7 @@ PAPER_CARD_LIST_FIELDS = [
 
 TASK_PATTERNS = {
     "node classification": [r"\bnode classification\b"],
+    "node clustering": [r"\bnode clustering\b", r"\bclustering task\b"],
     "graph classification": [r"\bgraph classification\b"],
     "link prediction": [r"\blink prediction\b"],
     "recommendation": [r"\brecommendation\b", r"\brecommender\b"],
@@ -235,6 +236,10 @@ GRAPH_PATTERNS = {
 }
 
 DATASET_PATTERNS = {
+    "ACM": [r"\bACM\b"],
+    "DBLP": [r"\bDBLP\b"],
+    "IMDB": [r"\bIMDB\b"],
+    "Aminer": [r"\bAminer\b", r"\bAMiner\b"],
     "Cora": [r"\bCora\b"],
     "Citeseer": [r"\bCiteSeer\b", r"\bCiteseer\b"],
     "PubMed": [r"\bPubMed\b"],
@@ -251,6 +256,15 @@ DATASET_PATTERNS = {
 }
 
 MODEL_PATTERNS = {
+    "RoHe": [r"\bRoHe\b", r"\bRobust Heterogeneous GNN\b"],
+    "HAN": [r"\bHAN\b", r"\bHeterogeneous Graph Attention Network\b"],
+    "MAGNN": [r"\bMAGNN\b"],
+    "GTN": [r"\bGTN\b", r"\bGraph Transformer Network\b"],
+    "HGNN": [r"\bHGNNs?\b", r"\bheterogeneous graph neural networks?\b"],
+    "attention purifier": [r"\battention puri(?:fi|ﬁ)er\b"],
+    "node-level attention": [r"\bnode-level attention\b"],
+    "semantic-level attention": [r"\bsemantic-level attention\b"],
+    "metapath-based aggregation": [r"\bmetapath-based aggregation\b"],
     "GCN": [r"\bGCN\b", r"\bgraph convolutional network\b"],
     "GAT": [r"\bGAT\b", r"\bgraph attention network\b"],
     "GraphSAGE": [r"\bGraphSAGE\b"],
@@ -270,6 +284,7 @@ LOSS_PATTERNS = {
 }
 
 ATTACK_PATTERNS = {
+    "topology adversarial attack": [r"\btopology adversarial attacks?\b"],
     "adversarial attack": [r"\badversarial attack\b"],
     "poisoning attack": [r"\bpoisoning\b"],
     "evasion attack": [r"\bevasion\b"],
@@ -278,6 +293,9 @@ ATTACK_PATTERNS = {
 }
 
 DEFENSE_PATTERNS = {
+    "attention purifier": [r"\battention puri(?:fi|ﬁ)er\b"],
+    "transiting probability prior": [r"\btransiting probability\b"],
+    "top-T neighbor purification": [r"\btop-?T\b", r"\btop T\b"],
     "adversarial training": [r"\badversarial training\b"],
     "robust aggregation": [r"\brobust aggregation\b"],
     "graph purification": [r"\bgraph purification\b"],
@@ -286,15 +304,27 @@ DEFENSE_PATTERNS = {
 
 METRIC_PATTERNS = {
     "accuracy": [r"\baccuracy\b", r"\bACC\b"],
+    "Macro-F1": [r"\bMacro-F1\b", r"\bmacro F1\b"],
+    "Micro-F1": [r"\bMicro-F1\b", r"\bmicro F1\b"],
     "F1": [r"\bF1\b", r"\bF1-score\b"],
     "AUC": [r"\bAUC\b", r"\bROC-AUC\b"],
     "AP": [r"\baverage precision\b", r"\bAP\b"],
     "MRR": [r"\bMRR\b"],
     "Hits@K": [r"\bHits@\d+\b", r"\bHits@K\b"],
     "NMI": [r"\bNMI\b"],
+    "ARI": [r"\bARI\b"],
 }
 
 BASELINE_PATTERNS = {
+    "HAN": [r"\bHAN\b"],
+    "MAGNN": [r"\bMAGNN\b"],
+    "GTN": [r"\bGTN\b"],
+    "Jaccard": [r"\bJaccard\b"],
+    "SimP": [r"\bSimP\b"],
+    "GGCL": [r"\bGGCL\b"],
+    "ESim": [r"\bESim\b"],
+    "metapath2vec": [r"\bmetapath2vec\b"],
+    "HERec": [r"\bHERec\b"],
     "GCN": [r"\bGCN\b"],
     "GAT": [r"\bGAT\b"],
     "GraphSAGE": [r"\bGraphSAGE\b"],
@@ -331,6 +361,125 @@ RESULT_TERMS = (
     "performance",
 )
 LIMITATION_TERMS = ("limitation", "future work", "fail", "cannot", "does not", "scalability")
+
+
+SECTION_PRIORITY = {
+    "abstract": 0,
+    "introduction": 1,
+    "method": 2,
+    "background": 3,
+    "experiments": 4,
+    "results": 5,
+    "conclusion": 6,
+    "related_work": 7,
+    "unknown": 8,
+}
+
+
+def _ordered_chunks(chunks: Iterable[Chunk]) -> list[Chunk]:
+    return sorted(
+        chunks,
+        key=lambda chunk: (SECTION_PRIORITY.get(chunk.section or "unknown", 9), chunk.index),
+    )
+
+
+def _extract_graph_types(chunks: list[Chunk]) -> list[CitedValue]:
+    values = _extract_keyword_values(_ordered_chunks(chunks), GRAPH_PATTERNS)
+    has_heterogeneous = any(value.value == "heterogeneous graph" for value in values)
+    if has_heterogeneous:
+        values = [value for value in values if value.value != "homogeneous graph"]
+        values = [
+            value
+            for value in values
+            if not (
+                value.value == "knowledge graph"
+                and re.search(
+                    r"\b(such as|applications?|applied to)\b",
+                    value.citations[0].evidence_text if value.citations else "",
+                    re.IGNORECASE,
+                )
+            )
+        ]
+    return values
+
+
+def _extract_dataset_values(chunks: list[Chunk]) -> list[CitedValue]:
+    return _extract_keyword_values(_dataset_ordered_chunks(chunks), DATASET_PATTERNS)
+
+
+def _dataset_ordered_chunks(chunks: Iterable[Chunk]) -> list[Chunk]:
+    priority = {
+        "experiments": 0,
+        "results": 1,
+        "abstract": 2,
+        "introduction": 3,
+        "method": 4,
+        "background": 5,
+        "related_work": 6,
+        "unknown": 7,
+    }
+    return sorted(
+        chunks,
+        key=lambda chunk: (priority.get(chunk.section or "unknown", 8), chunk.index),
+    )
+
+
+def _extract_node_types(chunks: list[Chunk]) -> list[CitedValue]:
+    values = _extract_list_after_label(chunks, r"node types?\s*(?:are|include|:)\s*([^.;\n]+)")
+    values.extend(
+        _extract_list_after_label(
+            chunks,
+            r"types of nodes(?:,?\s*i\.e\.,?| include|:)\s*([^.;\n]+)",
+        )
+    )
+
+    for chunk in chunks:
+        for match in re.finditer(
+            r"(?:consists of|contain(?:s)?|objects?)\s*\{([^{}]+)\}",
+            chunk.text,
+            re.IGNORECASE,
+        ):
+            values.extend(_schema_values_from_match(chunk, match.group(1), match.group(0)))
+        for match in re.finditer(
+            r"types of objects\s*\((.+?)\)\s*(?:,?\s+and|\.)",
+            chunk.text,
+            re.IGNORECASE,
+        ):
+            values.extend(_schema_values_from_match(chunk, match.group(1), match.group(0)))
+    return _dedupe_values(values)[:16]
+
+
+def _extract_edge_types(chunks: list[Chunk]) -> list[CitedValue]:
+    values = _extract_list_after_label(chunks, r"edge types?\s*(?:are|include|:)\s*([^.;\n]+)")
+    for chunk in chunks:
+        for match in re.finditer(r"relations?\s*\(([^)]+)\)", chunk.text, re.IGNORECASE):
+            relation_text = match.group(1)
+            if "between" in relation_text.lower():
+                continue
+            values.extend(_schema_values_from_match(chunk, relation_text, match.group(0)))
+    return _dedupe_values(values)[:16]
+
+
+def _schema_values_from_match(
+    chunk: Chunk,
+    raw_values: str,
+    evidence_text: str,
+) -> list[CitedValue]:
+    values: list[CitedValue] = []
+    for raw_value in re.split(r",| and |/", raw_values):
+        value = re.sub(r"\([A-Za-z0-9_-]+\)", "", raw_value).strip(" .;:{}[]")
+        if "(" in value or ")" in value or value == "A-B":
+            continue
+        if not value:
+            continue
+        values.append(
+            CitedValue(
+                value=value,
+                citations=[_citation_with_evidence(chunk, evidence_text)],
+                confidence="medium",
+            )
+        )
+    return values
 
 
 def _extract_keyword_values(
