@@ -1,0 +1,144 @@
+{
+  "task_type": [
+    "node classification",
+    "adversarial robustness evaluation",
+    "topology adversarial defense",
+    "evasion attack defense"
+  ],
+  "graph_type": [
+    "heterogeneous graph",
+    "heterogeneous information network",
+    "attributed heterogeneous graph",
+    "non-attributed heterogeneous graph"
+  ],
+  "datasets": [
+    "ACM",
+    "DBLP",
+    "Aminer"
+  ],
+  "node_types": [
+    "Paper",
+    "Author",
+    "Subject",
+    "Term",
+    "Conference",
+    "Reference"
+  ],
+  "edge_types": [
+    "P-A",
+    "P-S",
+    "P-T",
+    "P-C",
+    "P-R"
+  ],
+  "model_modules": [
+    "RoHe",
+    "attention purifier",
+    "type-specific transformation",
+    "feature-based importance",
+    "metapath-based transiting probability",
+    "transiting prior",
+    "confidence score",
+    "purification mask",
+    "Top-T neighbor purification",
+    "purified attention",
+    "node-level aggregation",
+    "semantic-level aggregation"
+  ],
+  "losses": [
+    "classification loss",
+    "cross entropy over labeled nodes"
+  ],
+  "attacks": [
+    "topology adversarial attack",
+    "evasion attack",
+    "FGSM-based attack",
+    "adversarial edge injection",
+    "hub-node adversarial link",
+    "random noise edge"
+  ],
+  "defenses": [
+    "RoHe",
+    "attention purifier",
+    "transiting probability prior",
+    "confidence-based neighbor pruning",
+    "Top-T neighbor purification",
+    "mask operation",
+    "RoHeT",
+    "RoHeP"
+  ],
+  "metrics": [
+    "Accuracy",
+    "Micro-F1"
+  ],
+  "baselines": [
+    "GCN",
+    "HAN",
+    "MAGNN",
+    "GTN",
+    "Jaccard",
+    "SimP",
+    "GGCL",
+    "HAN-RoHeT",
+    "HAN-RoHeP",
+    "MAGNN-RoHe",
+    "GTN-RoHeT"
+  ],
+  "training_setup": [
+    "ACM and DBLP features=bag-of-words",
+    "Aminer features=one-hot id vectors",
+    "mask threshold=T",
+    "pre-process transiting matrix",
+    "optimize RoHe with classification loss over labeled nodes"
+  ],
+  "evaluation_protocol": [
+    "ACM target task=paper classification",
+    "DBLP target task=author classification",
+    "Aminer target task=paper classification",
+    "ACM meta-paths=PAP, PSP",
+    "DBLP meta-paths=APA, APCPA, APTPA",
+    "Aminer meta-paths=PAP, PRP",
+    "Clean and Attack scenarios",
+    "FGSM-based perturbation edge generation",
+    "attack budgets \u0394=1, 3, 5",
+    "attack edge type=P-A for ACM and DBLP",
+    "attack edge type=P-R for Aminer",
+    "Micro-F1 over 500 target nodes randomly sampled from test set",
+    "random noise evaluated by linking target node to random nodes",
+    "RoHe evaluated on HAN and generalized to MAGNN and GTN",
+    "semantic-level analysis attacks only P-A edges on ACM"
+  ],
+  "main_results": [
+    "HGNNs are highly fragile to topology adversarial attacks compared with GCN",
+    "Vulnerability is attributed to perturbation enlargement and soft attention mechanism",
+    "HAN-RoHe consistently outperforms Jaccard, SimP, and GGCL under attack",
+    "HAN-RoHe restores performance close to clean setting on ACM and Aminer",
+    "RoHe significantly improves robustness of HAN and MAGNN",
+    "GTN can only use RoHeT due to memory consumption and gains less improvement",
+    "RoHe filters adversarial neighbors and assigns high confidence to true neighbors",
+    "Full meta-paths improve ACM robustness because PSP can relieve P-A perturbations"
+  ],
+  "limitations": [
+    "GTN is memory-consuming and can only be equipped with RoHeT",
+    "RoHe performance depends on mask threshold T",
+    "too small T loses relevant neighbor information",
+    "too large T introduces more noise and harmful neighbors",
+    "future work will explore using multiple aspects of metapath information to further improve robustness"
+  ],
+  "missing_implementation_details": [
+    "optimizer not specified",
+    "learning rate not specified",
+    "epoch number not specified",
+    "early stopping not specified",
+    "dropout not specified",
+    "hidden dimension not specified",
+    "random seed not specified",
+    "hardware not specified",
+    "train/validation/test split not specified",
+    "exact target-node sampling seed not specified",
+    "exact FGSM-based attack implementation details not included in main text",
+    "exact T selection rule for final experiments not fully specified",
+    "full dataset statistics not included in main text",
+    "more metrics are deferred to appendix"
+  ]
+}
