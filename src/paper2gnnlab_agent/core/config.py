@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     embedding_model: str | None = None
     api_key: str | None = Field(default=None, repr=False)
 
+    evidence_provider: str = "local"
+    graphrag_base_url: str | None = None
+    graphrag_endpoint: str = "/qa/ask"
+    graphrag_timeout_seconds: float = 30.0
+
 
 @lru_cache
 def get_settings() -> Settings:

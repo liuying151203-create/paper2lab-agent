@@ -39,6 +39,10 @@ def get_paper_service() -> PaperIngestionService:
             model_name=settings.model_name,
             model_base_url=settings.model_base_url,
             api_key=settings.api_key,
+            evidence_provider=settings.evidence_provider,
+            graphrag_base_url=settings.graphrag_base_url,
+            graphrag_endpoint=settings.graphrag_endpoint,
+            graphrag_timeout_seconds=settings.graphrag_timeout_seconds,
         ),
     )
 

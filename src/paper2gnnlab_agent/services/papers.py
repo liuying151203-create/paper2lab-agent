@@ -37,6 +37,10 @@ from paper2gnnlab_agent.services.card_extraction import (
 )
 from paper2gnnlab_agent.services.card_quality import PaperCardQualityService
 from paper2gnnlab_agent.services.comparison import PaperComparisonService
+from paper2gnnlab_agent.services.evidence import (
+    GraphRagEvidenceProvider,
+    LocalChunkEvidenceProvider,
+)
 from paper2gnnlab_agent.services.llm import OpenAICompatibleChatClient
 from paper2gnnlab_agent.services.method_spec import MethodSpecService, dump_method_spec_yaml
 from paper2gnnlab_agent.services.qa import ChunkQAService, LlmAnswerComposer
@@ -589,20 +593,52 @@ def build_qa_service_from_settings(
     model_name: str | None,
     model_base_url: str | None,
     api_key: str | None,
+    evidence_provider: str = "local",
+    graphrag_base_url: str | None = None,
+    graphrag_endpoint: str = "/qa/ask",
+    graphrag_timeout_seconds: float = 30.0,
 ) -> ChunkQAService:
     """Build QA service with optional LLM answer composition."""
 
+    evidence = _build_evidence_provider_from_settings(
+        evidence_provider=evidence_provider,
+        graphrag_base_url=graphrag_base_url,
+        graphrag_endpoint=graphrag_endpoint,
+        graphrag_timeout_seconds=graphrag_timeout_seconds,
+    )
+
     if not model_provider or not model_name or not api_key:
-        return ChunkQAService()
+        return ChunkQAService(evidence_provider=evidence)
     if model_provider.lower() not in {"openai", "openai_compatible"}:
-        return ChunkQAService()
+        return ChunkQAService(evidence_provider=evidence)
 
     client = OpenAICompatibleChatClient(
         api_key=api_key,
         model=model_name,
         base_url=model_base_url or "https://api.openai.com/v1",
     )
-    return ChunkQAService(answer_composer=LlmAnswerComposer(client))
+    return ChunkQAService(
+        answer_composer=LlmAnswerComposer(client),
+        evidence_provider=evidence,
+    )
+
+
+def _build_evidence_provider_from_settings(
+    evidence_provider: str,
+    graphrag_base_url: str | None,
+    graphrag_endpoint: str,
+    graphrag_timeout_seconds: float,
+) -> LocalChunkEvidenceProvider | GraphRagEvidenceProvider:
+    local_provider = LocalChunkEvidenceProvider()
+    if evidence_provider.lower() != "graphrag" or not graphrag_base_url:
+        return local_provider
+
+    return GraphRagEvidenceProvider(
+        base_url=graphrag_base_url,
+        endpoint=graphrag_endpoint,
+        timeout_seconds=graphrag_timeout_seconds,
+        fallback=local_provider,
+    )
 
 
 def build_card_extractor_from_settings(

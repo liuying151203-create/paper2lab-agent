@@ -11,7 +11,7 @@ The current codebase implements the Phase 1 and Phase 2 MVP workflow:
 3. Clean low-value text such as page furniture and reference noise.
 4. Split cleaned paragraphs into citation-ready chunks with `paper_id`, `chunk_id`, page, section, and evidence text.
 5. Generate a GNN-specific `PaperCard` with rule-based extraction and optional LLM structured extraction.
-6. Answer single-paper questions using local chunk evidence and return citations.
+6. Answer single-paper questions using local chunk evidence or an optional GraphRAG evidence adapter, and return citations.
 7. Compare multiple generated `PaperCard` artifacts across GNN dimensions.
 8. Generate a reproduction checklist from a `PaperCard`.
 9. Export `method_spec.yaml` from `PaperCard` and optional reproduction-plan artifacts.
@@ -25,7 +25,6 @@ The following items are planned for Phase 3 and should not be treated as current
 
 - Template-driven experiment project scaffolding from `method_spec.yaml`.
 - Generated `README_reproduce.md`, experiment `TODO.md`, model stubs, configs, scripts, or attack modules.
-- GraphRAG adapter integration.
 - Embedding/vector search and reranking.
 - Experiment log analysis and debug recommendations.
 - Automatic full paper reproduction.
@@ -83,7 +82,16 @@ In another terminal, run the Streamlit demo:
 .\.venv\Scripts\python.exe -m streamlit run src\paper2gnnlab_agent\ui\app.py
 ```
 
-Copy `.env.example` to `.env` only when you need custom storage paths or optional LLM settings. Do not commit real API keys.
+Copy `.env.example` to `.env` only when you need custom storage paths, optional LLM settings, or optional GraphRAG evidence retrieval. Do not commit real API keys.
+
+Optional GraphRAG evidence retrieval is configured through `.env`. The external service should accept `paper_id`, `question`, and `top_k`, and return evidence in a `citations`, `evidence`, `results`, or `items` list. Returned items are normalized to the local `Citation` schema. If the external service fails or returns no evidence, QA falls back to local chunk retrieval.
+
+```powershell
+P2GL_EVIDENCE_PROVIDER=graphrag
+P2GL_GRAPHRAG_BASE_URL=http://127.0.0.1:9000
+P2GL_GRAPHRAG_ENDPOINT=/qa/ask
+P2GL_GRAPHRAG_TIMEOUT_SECONDS=30
+```
 
 ## Useful Commands
 
