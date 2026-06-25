@@ -1,0 +1,132 @@
+{
+  "task_type": [
+    "semi-supervised node classification",
+    "node clustering",
+    "node embedding visualization"
+  ],
+  "graph_type": [
+    "heterogeneous graph",
+    "heterogeneous information network",
+    "attributed heterogeneous graph"
+  ],
+  "datasets": [
+    "DBLP",
+    "ACM",
+    "IMDB"
+  ],
+  "node_types": [
+    "Paper",
+    "Author",
+    "Conference",
+    "Term",
+    "Movie",
+    "Actor",
+    "Director",
+    "Subject"
+  ],
+  "edge_types": [
+    "Paper-Author",
+    "Paper-Conference",
+    "Paper-Term",
+    "Movie-Actor",
+    "Movie-Director",
+    "Paper-Subject"
+  ],
+  "model_modules": [
+    "HAN",
+    "type-specific transformation matrix",
+    "meta-path based neighbors",
+    "node-level attention",
+    "masked attention",
+    "multi-head attention",
+    "semantic-specific node embedding",
+    "semantic-level attention",
+    "meta-path semantic fusion",
+    "linear classifier"
+  ],
+  "losses": [
+    "cross entropy over labeled nodes"
+  ],
+  "attacks": [],
+  "defenses": [],
+  "metrics": [
+    "Macro-F1",
+    "Micro-F1",
+    "NMI",
+    "ARI"
+  ],
+  "baselines": [
+    "DeepWalk",
+    "ESim",
+    "metapath2vec",
+    "HERec",
+    "GCN",
+    "GAT",
+    "HANnd",
+    "HANsem"
+  ],
+  "training_setup": [
+    "random parameter initialization",
+    "Adam optimizer",
+    "learning rate=0.005",
+    "regularization parameter=0.001",
+    "semantic-level attention vector dimension=128",
+    "attention heads=8",
+    "attention dropout=0.6",
+    "early stopping patience=100 validation-loss epochs",
+    "embedding dimension=64",
+    "DeepWalk/ESim/metapath2vec/HERec window size=5",
+    "DeepWalk/ESim/metapath2vec/HERec walk length=100",
+    "DeepWalk/ESim/metapath2vec/HERec walks per node=40",
+    "DeepWalk/ESim/metapath2vec/HERec negative samples=5",
+    "GCN and GAT parameters optimized using validation set"
+  ],
+  "evaluation_protocol": [
+    "DBLP target nodes=Author",
+    "ACM target nodes=Paper",
+    "IMDB target nodes=Movie",
+    "DBLP classes=4 research areas",
+    "ACM classes=3 paper classes",
+    "IMDB classes=3 movie genres",
+    "DBLP meta-paths=APA, APCPA, APTPA",
+    "ACM meta-paths=PAP, PSP",
+    "IMDB meta-paths=MAM, MDM",
+    "DBLP split=800 train, 400 validation, 2857 test",
+    "ACM split=600 train, 300 validation, 2125 test",
+    "IMDB split=300 train, 300 validation, 2687 test",
+    "same train/validation/test split for GCN, GAT, HAN",
+    "node classification uses KNN classifier k=5",
+    "node classification training ratios=20%, 40%, 60%, 80%",
+    "classification repeated 10 times and averaged",
+    "clustering uses KMeans",
+    "number of clusters set to number of classes",
+    "clustering repeated 10 times and averaged",
+    "visualization uses t-SNE on DBLP author embeddings"
+  ],
+  "main_results": [
+    "HAN achieves strongest overall node classification performance across DBLP, ACM, and IMDB",
+    "HAN achieves the best clustering results on ACM, DBLP, and IMDB",
+    "HAN outperforms GAT by modeling heterogeneous graph semantics",
+    "HAN outperforms GCN and HANnd by learning neighbor importance",
+    "HAN outperforms HANsem by learning meta-path importance",
+    "Semantic-level attention weights positively correlate with single-meta-path performance",
+    "APCPA receives the largest semantic weight on DBLP",
+    "HAN visualization on DBLP shows clearer class separation than GCN, GAT, and metapath2vec"
+  ],
+  "limitations": [
+    "larger final embedding dimension may introduce redundancies",
+    "too large semantic-level attention vector dimension may cause overfitting",
+    "additional attention heads only slightly improve performance"
+  ],
+  "missing_implementation_details": [
+    "random seed not specified",
+    "maximum training epochs not specified",
+    "hardware not specified",
+    "activation function sigma not specified",
+    "exact train/validation/test split indices not specified",
+    "text feature preprocessing details not fully specified",
+    "regularization form not specified",
+    "GCN/GAT hyperparameter search space not specified",
+    "exact metapath adjacency construction details not fully specified"
+  ]
+}
