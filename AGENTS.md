@@ -70,6 +70,26 @@ Each citation should include:
 - section
 - evidence text
 
+## Completion reports and commit commands
+
+After every task that changes code, documentation, tests, configuration, or project artifacts, provide a concise completion report before ending the turn.
+
+The report should include:
+- what changed
+- which files were touched
+- what validation was run, or why validation was not run
+- any remaining risks or follow-up work
+
+Also provide a suggested git commit command. Prefer a bilingual, multi-message commit format, for example:
+
+```bash
+git commit -m "docs: update neighbor-mean KNN results / 更新邻居均值KNN实验结果" \
+  -m "English: Add 5-seed ACM neighbor-mean KNN results, analysis, and updated DVCL feature-view recommendation." \
+  -m "中文：补充 ACM 5-seed 邻居均值 KNN 实验结果、分析总结，并更新 DVCL 特征视图推荐配置。"
+```
+
+When there are unrelated uncommitted changes in the worktree, make the suggested command narrow, such as `git add AGENTS.md`, so unrelated work is not accidentally included.
+
 ## Avoid
 
 - Do not build a complex multi-agent system in the MVP.
