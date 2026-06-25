@@ -182,6 +182,17 @@ Streamlit 只作为 MVP demo，不承担核心业务逻辑。UI 通过 FastAPI �
 
 每个关键字段应尽量附带 citations，无法从论文中确认的字段标记为 `unknown` 或写入 `missing_implementation_details`，不能凭空补齐。
 
+### 4.4.1 PaperCard 质量评估与人工审查
+
+PaperCard 生成后进入审查环节。系统提供轻量质量报告，帮助用户判断抽取结果是否足够进入复现规划：
+
+- completeness：核心复现字段是否齐全，包括任务、图类型、数据集、模型模块、指标和 baseline。
+- citation coverage：抽取值是否有 citation evidence。
+- suspicious values：标记来自 `related_work`、`unknown` 或无 citation 的低置信值。
+- golden comparison：如果存在 `data/eval/{paper_id}.golden.json`，计算字段级 precision/recall。
+
+用户可以在 UI 中人工编辑 PaperCard 字段并保存 reviewed artifact。Reviewed PaperCard 与自动生成结果分开保存，后续多论文对比、复现 checklist 和 `method_spec.yaml` 优先使用 reviewed 版本。
+
 ### 4.5 单篇论文 QA
 
 1. 用户提交 `paper_id` 和问题。

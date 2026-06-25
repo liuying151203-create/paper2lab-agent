@@ -47,6 +47,7 @@ from paper2gnnlab_agent.models.parsed import (
     ParsePaperResponse,
 )
 from paper2gnnlab_agent.models.qa import PaperQARequest, PaperQAResponse
+from paper2gnnlab_agent.models.quality import FieldQuality, PaperCardQualityReport
 
 __all__ = [
     "Citation",
@@ -58,9 +59,11 @@ __all__ = [
     "Chunk",
     "ChunkListResponse",
     "ChecklistItem",
+    "FieldQuality",
     "Paper",
     "PaperArtifacts",
     "PaperCard",
+    "PaperCardQualityReport",
     "PaperCardResponse",
     "PaperComparisonRequest",
     "PaperComparisonResponse",

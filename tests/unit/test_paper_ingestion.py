@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from paper2gnnlab_agent.models.card import ReproductionDifficulty
+from paper2gnnlab_agent.models.common import CitedValue
 from paper2gnnlab_agent.models.parsed import ParsedPage
 from paper2gnnlab_agent.services.papers import (
     PaperIngestionService,
@@ -120,3 +122,43 @@ def test_parse_pdf_writes_page_text_cleans_text_and_reuses_artifacts(tmp_path: P
     assert (paths.cleaned_dir / f"{upload.paper_id}.json").exists()
     assert (paths.chunks_dir / f"{upload.paper_id}.jsonl").exists()
     assert (paths.cards_dir / f"{upload.paper_id}.json").exists()
+
+
+def test_reviewed_paper_card_is_preferred_for_quality_and_downstream(
+    tmp_path: Path,
+) -> None:
+    paths = make_paths(tmp_path)
+    service = PaperIngestionService(
+        repository=PaperRepository(paths.sqlite_path),
+        paths=paths,
+        parser=FakeParser(),
+    )
+    upload = service.upload_pdf("gnn-paper.pdf", b"%PDF-1.4\nminimal test pdf\n")
+    service.parse_pdf(upload.paper_id)
+    service.generate_chunks(upload.paper_id, max_chars=120)
+    original = service.generate_paper_card(upload.paper_id).card
+    reviewed = original.model_copy(
+        update={
+            "datasets": [CitedValue(value="ReviewedSet", confidence="unknown")],
+            "reproduction_difficulty": ReproductionDifficulty(level="high"),
+        }
+    )
+    eval_dir = paths.data_dir / "eval"
+    eval_dir.mkdir(parents=True, exist_ok=True)
+    (eval_dir / f"{upload.paper_id}.golden.json").write_text(
+        '{"datasets": ["ReviewedSet"]}',
+        encoding="utf-8",
+    )
+
+    service.save_reviewed_paper_card(upload.paper_id, reviewed)
+    loaded = service.get_paper_card(upload.paper_id).card
+    report = service.evaluate_paper_card(upload.paper_id)
+    plan = service.generate_reproduction_plan(upload.paper_id, force=True).plan
+
+    assert loaded.datasets[0].value == "ReviewedSet"
+    assert report.golden_available is True
+    assert any(
+        field.field == "datasets" and field.recall == 1.0
+        for field in report.fields
+    )
+    assert any("ReviewedSet" in item.item for item in plan.data_preparation)

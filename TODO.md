@@ -109,6 +109,14 @@
 - [x] 增加 `method_spec.yaml` 下载接口。
 - [x] 在 Streamlit UI 中预览和下载 `method_spec.yaml`。
 
+### 4. PaperCard 质量评估与审查
+
+- [x] 增加 PaperCard completeness、citation coverage 和 suspicious values 质量报告。
+- [x] 支持可选 golden JSON 对比并输出字段级 precision/recall。
+- [x] 在 Streamlit UI 中展示 PaperCard 质量面板。
+- [x] 在 Streamlit UI 中支持人工编辑并保存 reviewed PaperCard。
+- [x] 后续 comparison、reproduction plan 和 method_spec 优先使用 reviewed PaperCard。
+
 ## Phase 3：实验落地辅助
 
 目标：基于已审查的 MethodSpec 生成可读、可修改、可运行前检查的实验骨架。

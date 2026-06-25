@@ -27,6 +27,7 @@ from paper2gnnlab_agent.models.paper import (
 )
 from paper2gnnlab_agent.models.parsed import ParsedPaper, ParsePaperResponse
 from paper2gnnlab_agent.models.qa import PaperQAResponse
+from paper2gnnlab_agent.models.quality import PaperCardQualityReport
 from paper2gnnlab_agent.parsers.chunking import TextChunker
 from paper2gnnlab_agent.parsers.cleaning import TextCleaner
 from paper2gnnlab_agent.parsers.pdf import PdfParser, PdfParsingError, PypdfParser
@@ -34,6 +35,7 @@ from paper2gnnlab_agent.services.card_extraction import (
     PaperCardExtractor,
     RuleBasedPaperCardExtractor,
 )
+from paper2gnnlab_agent.services.card_quality import PaperCardQualityService
 from paper2gnnlab_agent.services.comparison import PaperComparisonService
 from paper2gnnlab_agent.services.llm import OpenAICompatibleChatClient
 from paper2gnnlab_agent.services.method_spec import MethodSpecService, dump_method_spec_yaml
@@ -67,6 +69,7 @@ class PaperIngestionService:
         comparison_service: PaperComparisonService | None = None,
         reproduction_service: ReproductionChecklistService | None = None,
         method_spec_service: MethodSpecService | None = None,
+        quality_service: PaperCardQualityService | None = None,
     ) -> None:
         self.repository = repository
         self.paths = paths
@@ -78,6 +81,7 @@ class PaperIngestionService:
         self.comparison_service = comparison_service or PaperComparisonService()
         self.reproduction_service = reproduction_service or ReproductionChecklistService()
         self.method_spec_service = method_spec_service or MethodSpecService()
+        self.quality_service = quality_service or PaperCardQualityService()
 
     def upload_pdf(self, filename: str, content: bytes) -> PaperUploadResponse:
         """Persist a new PDF or reuse an existing paper by SHA-256 hash."""
@@ -133,7 +137,8 @@ class PaperIngestionService:
             parsed=self._parsed_path(paper_id).exists(),
             cleaned=self._cleaned_path(paper_id).exists(),
             chunks=(self.paths.chunks_dir / f"{paper_id}.jsonl").exists(),
-            paper_card=(self.paths.cards_dir / f"{paper_id}.json").exists(),
+            paper_card=self._card_path(paper_id).exists()
+            or self._reviewed_card_path(paper_id).exists(),
             method_spec=(self.paths.specs_dir / f"{paper_id}.yaml").exists(),
         )
         return PaperDetailResponse(**paper.model_dump(), artifacts=artifacts)
@@ -302,7 +307,7 @@ class PaperIngestionService:
 
         card_path = self._card_path(paper_id)
         if card_path.exists() and not force:
-            card = _read_paper_card(card_path)
+            card = _read_paper_card(self._preferred_card_path(paper_id))
             return PaperCardResponse(
                 paper_id=paper_id,
                 status="card_ready",
@@ -332,7 +337,7 @@ class PaperIngestionService:
         if self.repository.get_by_id(paper_id) is None:
             raise PaperNotFoundError(paper_id)
 
-        card_path = self._card_path(paper_id)
+        card_path = self._preferred_card_path(paper_id)
         if not card_path.exists():
             raise CardArtifactNotFoundError(paper_id)
 
@@ -341,6 +346,40 @@ class PaperIngestionService:
             status="card_ready",
             card=_read_paper_card(card_path),
             reused=True,
+        )
+
+    def save_reviewed_paper_card(self, paper_id: str, card: PaperCard) -> PaperCardResponse:
+        """Persist a manually reviewed PaperCard and prefer it downstream."""
+
+        if self.repository.get_by_id(paper_id) is None:
+            raise PaperNotFoundError(paper_id)
+        if card.paper_id != paper_id:
+            card = card.model_copy(update={"paper_id": paper_id})
+
+        reviewed_path = self._reviewed_card_path(paper_id)
+        self.paths.cards_dir.mkdir(parents=True, exist_ok=True)
+        _write_paper_card(reviewed_path, card)
+        self.repository.update_status(paper_id, "card_ready")
+        return PaperCardResponse(
+            paper_id=paper_id,
+            status="card_ready",
+            card=card,
+            reused=False,
+        )
+
+    def evaluate_paper_card(self, paper_id: str) -> PaperCardQualityReport:
+        """Evaluate the preferred PaperCard with optional local golden values."""
+
+        if self.repository.get_by_id(paper_id) is None:
+            raise PaperNotFoundError(paper_id)
+
+        card_path = self._preferred_card_path(paper_id)
+        if not card_path.exists():
+            raise CardArtifactNotFoundError(paper_id)
+
+        return self.quality_service.evaluate(
+            _read_paper_card(card_path),
+            golden=_read_golden_card(self._golden_card_path(paper_id)),
         )
 
     def answer_question(self, paper_id: str, question: str, top_k: int = 6) -> PaperQAResponse:
@@ -372,7 +411,7 @@ class PaperIngestionService:
         for paper_id in paper_ids:
             if self.repository.get_by_id(paper_id) is None:
                 raise PaperNotFoundError(paper_id)
-            card_path = self._card_path(paper_id)
+            card_path = self._preferred_card_path(paper_id)
             if not card_path.exists():
                 raise CardArtifactNotFoundError(paper_id)
             cards.append(_read_paper_card(card_path))
@@ -397,7 +436,7 @@ class PaperIngestionService:
                 reused=True,
             )
 
-        card_path = self._card_path(paper_id)
+        card_path = self._preferred_card_path(paper_id)
         if not card_path.exists():
             raise CardArtifactNotFoundError(paper_id)
 
@@ -428,7 +467,7 @@ class PaperIngestionService:
                 reused=True,
             )
 
-        card_path = self._card_path(paper_id)
+        card_path = self._preferred_card_path(paper_id)
         if not card_path.exists():
             raise CardArtifactNotFoundError(paper_id)
 
@@ -481,6 +520,18 @@ class PaperIngestionService:
     def _card_path(self, paper_id: str) -> Path:
         return self.paths.cards_dir / f"{paper_id}.json"
 
+    def _reviewed_card_path(self, paper_id: str) -> Path:
+        return self.paths.cards_dir / f"{paper_id}.reviewed.json"
+
+    def _preferred_card_path(self, paper_id: str) -> Path:
+        reviewed_path = self._reviewed_card_path(paper_id)
+        if reviewed_path.exists():
+            return reviewed_path
+        return self._card_path(paper_id)
+
+    def _golden_card_path(self, paper_id: str) -> Path:
+        return self.paths.data_dir / "eval" / f"{paper_id}.golden.json"
+
     def _reproduction_plan_path(self, paper_id: str) -> Path:
         return self.paths.specs_dir / f"{paper_id}.reproduction_plan.json"
 
@@ -514,6 +565,7 @@ def build_paper_service(
     comparison_service: PaperComparisonService | None = None,
     reproduction_service: ReproductionChecklistService | None = None,
     method_spec_service: MethodSpecService | None = None,
+    quality_service: PaperCardQualityService | None = None,
 ) -> PaperIngestionService:
     """Factory used by API dependencies and tests."""
 
@@ -528,6 +580,7 @@ def build_paper_service(
         comparison_service=comparison_service,
         reproduction_service=reproduction_service,
         method_spec_service=method_spec_service,
+        quality_service=quality_service,
     )
 
 
@@ -621,6 +674,20 @@ def _write_paper_card(path: Path, card: PaperCard) -> None:
 
 def _read_paper_card(path: Path) -> PaperCard:
     return PaperCard.model_validate(json.loads(path.read_text(encoding="utf-8")))
+
+
+def _read_golden_card(path: Path) -> dict[str, list[str]] | None:
+    if not path.exists():
+        return None
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        return None
+
+    golden: dict[str, list[str]] = {}
+    for field_name, raw_values in payload.items():
+        if isinstance(raw_values, list):
+            golden[field_name] = [str(value) for value in raw_values if str(value).strip()]
+    return golden
 
 
 def _write_reproduction_plan(path: Path, plan: ReproductionPlan) -> None:

@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import UTC, datetime
 
 import streamlit as st
 
 from paper2gnnlab_agent import __version__
 from paper2gnnlab_agent.core.config import Settings, get_settings
-from paper2gnnlab_agent.models.card import PaperCard
+from paper2gnnlab_agent.models.card import PaperCard, ReproductionDifficulty
 from paper2gnnlab_agent.models.common import Citation, CitedValue
 from paper2gnnlab_agent.models.comparison import PaperComparisonResponse
 from paper2gnnlab_agent.models.method import ChecklistItem, MethodSpec, ReproductionPlan
 from paper2gnnlab_agent.models.paper import PaperDetailResponse
+from paper2gnnlab_agent.services.card_quality import REVIEW_FIELDS
 from paper2gnnlab_agent.services.comparison import SUPPORTED_COMPARISON_DIMENSIONS
 from paper2gnnlab_agent.services.papers import (
     CardArtifactNotFoundError,
@@ -210,7 +212,13 @@ def render_card_panel(service: PaperIngestionService, paper_id: str) -> None:
         st.warning(f"PaperCard is not ready: {exc}")
         return
 
-    render_card(card)
+    card_tab, quality_tab, review_tab = st.tabs(["Card", "Quality", "Review"])
+    with card_tab:
+        render_card(card)
+    with quality_tab:
+        render_card_quality(service, paper_id)
+    with review_tab:
+        render_card_review_form(service, paper_id, card)
 
 
 def render_card(card: PaperCard) -> None:
@@ -244,6 +252,99 @@ def render_card(card: PaperCard) -> None:
     st.write(card.reproduction_difficulty.level)
     for reason in card.reproduction_difficulty.reasons:
         render_cited_value("Reason", reason)
+
+
+def render_card_quality(service: PaperIngestionService, paper_id: str) -> None:
+    """Render explainable PaperCard quality signals."""
+
+    try:
+        report = service.evaluate_paper_card(paper_id)
+    except (PaperNotFoundError, CardArtifactNotFoundError):
+        st.info("Generate a PaperCard before quality review.")
+        return
+
+    columns = st.columns(4)
+    columns[0].metric("Completeness", _percent(report.completeness))
+    columns[1].metric("Citation coverage", _percent(report.citation_coverage))
+    columns[2].metric("Suspicious values", report.suspicious_values_count)
+    golden_text = "yes" if report.golden_available else "no"
+    columns[3].metric("Golden", golden_text)
+
+    if report.golden_available:
+        cols = st.columns(2)
+        cols[0].metric("Golden precision", _optional_percent(report.macro_precision))
+        cols[1].metric("Golden recall", _optional_percent(report.macro_recall))
+
+    for warning in report.warnings:
+        st.warning(warning)
+
+    st.dataframe(
+        [
+            {
+                "field": field.field,
+                "values": field.values_count,
+                "cited": field.cited_values_count,
+                "coverage": _percent(field.citation_coverage),
+                "missing": field.missing,
+                "suspicious": "; ".join(field.suspicious_values),
+                "precision": _optional_percent(field.precision),
+                "recall": _optional_percent(field.recall),
+            }
+            for field in report.fields
+        ],
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
+def render_card_review_form(
+    service: PaperIngestionService,
+    paper_id: str,
+    card: PaperCard,
+) -> None:
+    """Render a lightweight manual PaperCard review editor."""
+
+    st.caption(
+        "Values are newline-separated. Existing citations are preserved when a value is kept; "
+        "new values are saved with unknown confidence and no citation."
+    )
+    with st.form(f"review_card_{paper_id}"):
+        problem_text = st.text_area(
+            "Problem",
+            value=card.problem.value if card.problem else "",
+            height=90,
+        )
+        edited_texts = {
+            field: st.text_area(
+                _field_label(field),
+                value=_values_to_text(getattr(card, field)),
+                height=90 if field in {"main_results", "limitations"} else 70,
+            )
+            for field in REVIEW_FIELDS
+        }
+        difficulty = st.selectbox(
+            "Reproduction difficulty",
+            options=["low", "medium", "high", "unknown"],
+            index=["low", "medium", "high", "unknown"].index(
+                card.reproduction_difficulty.level
+            ),
+        )
+        submitted = st.form_submit_button("Save reviewed PaperCard", type="primary")
+
+    if submitted:
+        reviewed = _build_reviewed_card(
+            original=card,
+            paper_id=paper_id,
+            problem_text=problem_text,
+            edited_texts=edited_texts,
+            difficulty=difficulty,
+        )
+        run_action(
+            lambda: service.save_reviewed_paper_card(paper_id, reviewed),
+            success=lambda response: st.success(
+                f"Saved reviewed PaperCard for {response.paper_id}"
+            ),
+        )
 
 
 def render_cited_values(title: str, values: list[CitedValue]) -> None:
@@ -461,6 +562,84 @@ def render_method_spec_panel(service: PaperIngestionService, paper_id: str) -> N
         use_container_width=True,
     )
     st.code(yaml_text, language="yaml")
+
+
+def _build_reviewed_card(
+    original: PaperCard,
+    paper_id: str,
+    problem_text: str,
+    edited_texts: dict[str, str],
+    difficulty: str,
+) -> PaperCard:
+    updates: dict[str, object] = {
+        "paper_id": paper_id,
+        "generated_at": datetime.now(UTC),
+        "reproduction_difficulty": ReproductionDifficulty(
+            level=difficulty,
+            reasons=original.reproduction_difficulty.reasons,
+        ),
+    }
+    problem = problem_text.strip()
+    updates["problem"] = (
+        CitedValue(
+            value=problem,
+            citations=original.problem.citations if original.problem else [],
+            confidence=original.problem.confidence if original.problem else "unknown",
+        )
+        if problem
+        else None
+    )
+    for field_name, text in edited_texts.items():
+        updates[field_name] = _review_values_from_text(
+            text,
+            getattr(original, field_name),
+        )
+    return original.model_copy(update=updates)
+
+
+def _review_values_from_text(text: str, existing_values: list[CitedValue]) -> list[CitedValue]:
+    existing_by_key = {_normalize_value(value.value): value for value in existing_values}
+    reviewed: list[CitedValue] = []
+    seen: set[str] = set()
+    for value in _text_to_values(text):
+        key = _normalize_value(value)
+        if not key or key in seen:
+            continue
+        if key in existing_by_key:
+            reviewed.append(existing_by_key[key])
+        else:
+            reviewed.append(CitedValue(value=value, confidence="unknown"))
+        seen.add(key)
+    return reviewed
+
+
+def _values_to_text(values: list[CitedValue]) -> str:
+    return "\n".join(value.value for value in values)
+
+
+def _text_to_values(text: str) -> list[str]:
+    values: list[str] = []
+    for line in text.replace(";", "\n").splitlines():
+        value = line.strip(" ,")
+        if value:
+            values.append(value)
+    return values
+
+
+def _normalize_value(value: str) -> str:
+    return " ".join(value.strip().lower().split())
+
+
+def _field_label(field_name: str) -> str:
+    return field_name.replace("_", " ").title()
+
+
+def _percent(value: float) -> str:
+    return f"{value * 100:.0f}%"
+
+
+def _optional_percent(value: float | None) -> str:
+    return "n/a" if value is None else _percent(value)
 
 
 def _count_checklist_items(plan: ReproductionPlan) -> int:
