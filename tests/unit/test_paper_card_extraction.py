@@ -5,6 +5,7 @@ from paper2gnnlab_agent.models.common import Citation
 from paper2gnnlab_agent.services.card_extraction import (
     LlmPaperCardExtractor,
     RuleBasedPaperCardExtractor,
+    _extract_json_object,
 )
 
 
@@ -212,6 +213,19 @@ def test_llm_card_extractor_falls_back_on_invalid_json() -> None:
     assert card.extraction_method == "rule_based"
     assert "LLM extraction failed" in card.extraction_notes[0]
     assert card.task_type[0].value == "node classification"
+
+
+def test_llm_json_extraction_sanitizes_raw_control_chars_in_strings() -> None:
+    payload = _extract_json_object(
+        '{"paper_id": "paper_card123", "task_type": [], '
+        '"main_results": [{"value": "Feature importance \\x08 copied from PDF", '
+        '"confidence": "low", "citations": []}], '
+        '"reproduction_difficulty": {"level": "unknown", "reasons": []}}'.replace(
+            "\\x08", "\x08"
+        )
+    )
+
+    assert payload["main_results"][0]["value"] == "Feature importance   copied from PDF"
 
 
 def make_chunk(

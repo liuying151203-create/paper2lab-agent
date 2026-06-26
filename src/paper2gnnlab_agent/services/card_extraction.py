@@ -135,7 +135,7 @@ def _build_card_prompt(paper_id: str, chunks: list[Chunk]) -> str:
             f"page: {chunk.page_start}\n"
             f"section: {chunk.section or 'unknown'}\n"
             f"citation: {chunk.citation.model_dump_json()}\n"
-            f"text: {chunk.text[:1800]}"
+            f"text: {_strip_control_chars(chunk.text[:1800])}"
         )
         for chunk in chunks
     )
@@ -291,10 +291,41 @@ def _extract_json_object(text: str) -> dict[str, object]:
     end = stripped.rfind("}")
     if start == -1 or end == -1 or end <= start:
         raise ValueError("LLM response did not contain a JSON object.")
-    parsed = json.loads(stripped[start : end + 1])
+    json_text = stripped[start : end + 1]
+    try:
+        parsed = json.loads(json_text)
+    except json.JSONDecodeError:
+        parsed = json.loads(_sanitize_json_control_chars(json_text))
     if not isinstance(parsed, dict):
         raise TypeError("LLM PaperCard response must be a JSON object.")
     return parsed
+
+
+def _sanitize_json_control_chars(text: str) -> str:
+    sanitized: list[str] = []
+    in_string = False
+    escaped = False
+    for char in text:
+        if escaped:
+            sanitized.append(char)
+            escaped = False
+            continue
+        if char == "\\":
+            sanitized.append(char)
+            escaped = in_string
+            continue
+        if char == '"':
+            sanitized.append(char)
+            in_string = not in_string
+            continue
+        if ord(char) < 32:
+            if in_string:
+                sanitized.append(" ")
+            elif char in {"\n", "\r", "\t"}:
+                sanitized.append(char)
+            continue
+        sanitized.append(char)
+    return "".join(sanitized)
 
 
 def _drop_unknown_citations(card: PaperCard, known_chunk_ids: set[str]) -> None:
@@ -1025,6 +1056,13 @@ def _dedupe_values(values: list[CitedValue]) -> list[CitedValue]:
 
 def _compact(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
+
+
+def _strip_control_chars(text: str) -> str:
+    return "".join(
+        char if ord(char) >= 32 or char in {"\n", "\r", "\t"} else " "
+        for char in text
+    )
 
 
 def _exception_summary(exc: Exception) -> str:
