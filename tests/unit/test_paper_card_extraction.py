@@ -156,6 +156,15 @@ def test_rule_based_card_extractor_handles_rohe_robustness_evidence() -> None:
     assert {"Paper", "Author", "Subject", "Term", "Conference", "Reference"}.issubset(
         {item.value for item in card.node_types}
     )
+    profiles = {profile.dataset.value: profile for profile in card.dataset_profiles}
+    assert {"ACM", "DBLP", "Aminer"}.issubset(profiles)
+    assert {"Paper", "Author", "Subject"}.issubset(
+        {item.value for item in profiles["ACM"].node_types}
+    )
+    assert {"P-A", "P-S"}.issubset({item.value for item in profiles["ACM"].edge_types})
+    assert {"Paper", "Author", "Reference"}.issubset(
+        {item.value for item in profiles["Aminer"].node_types}
+    )
 
 
 def test_llm_card_extractor_validates_structured_json_with_citations() -> None:

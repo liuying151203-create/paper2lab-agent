@@ -92,9 +92,18 @@ def _evaluate_field(
     normalized_expected = {
         _normalize(value): value for value in expected_values if value.strip()
     }
+    actual_values = sorted(normalized_values.values())
     matched = sorted(
         normalized_expected[key]
         for key in normalized_expected.keys() & normalized_values.keys()
+    )
+    missing_expected = sorted(
+        normalized_expected[key]
+        for key in normalized_expected.keys() - normalized_values.keys()
+    )
+    extra_actual = sorted(
+        normalized_values[key]
+        for key in normalized_values.keys() - normalized_expected.keys()
     )
     cited_count = sum(bool(value.citations) for value in values)
     suspicious = [
@@ -111,6 +120,7 @@ def _evaluate_field(
 
     return FieldQuality(
         field=field_name,
+        actual_values=actual_values,
         values_count=len(values),
         cited_values_count=cited_count,
         missing=field_name in REQUIRED_REPRODUCTION_FIELDS and not values,
@@ -118,6 +128,8 @@ def _evaluate_field(
         suspicious_values=sorted(set(suspicious)),
         expected_values=sorted(normalized_expected.values()),
         matched_expected_values=matched,
+        missing_expected_values=missing_expected,
+        extra_actual_values=extra_actual,
         precision=precision,
         recall=recall,
     )

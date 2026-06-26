@@ -180,7 +180,17 @@ def render_pipeline(service: PaperIngestionService, paper_id: str) -> None:
     """Render Phase 1 workflow actions."""
 
     st.subheader("Workflow")
-    force = st.checkbox("Force regenerate artifacts", value=False)
+    force_col, chunk_col = st.columns([1, 1])
+    with force_col:
+        force = st.checkbox("Force regenerate artifacts", value=False)
+    with chunk_col:
+        max_chars = st.number_input(
+            "Chunk max chars",
+            min_value=400,
+            max_value=4000,
+            value=1800,
+            step=100,
+        )
     col_parse, col_chunk, col_card = st.columns(3)
 
     with col_parse:
@@ -193,13 +203,6 @@ def render_pipeline(service: PaperIngestionService, paper_id: str) -> None:
             )
 
     with col_chunk:
-        max_chars = st.number_input(
-            "Chunk max chars",
-            min_value=400,
-            max_value=4000,
-            value=1800,
-            step=100,
-        )
         if st.button("Generate chunks", use_container_width=True):
             run_action(
                 lambda: service.generate_chunks(paper_id, force=force, max_chars=int(max_chars)),
@@ -252,6 +255,8 @@ def render_card(card: PaperCard) -> None:
     if card.problem:
         render_cited_value("Problem", card.problem)
 
+    render_dataset_profiles(card)
+
     sections = [
         ("Task type", card.task_type),
         ("Graph type", card.graph_type),
@@ -277,6 +282,36 @@ def render_card(card: PaperCard) -> None:
     st.write(card.reproduction_difficulty.level)
     for reason in card.reproduction_difficulty.reasons:
         render_cited_value("Reason", reason)
+
+
+def render_dataset_profiles(card: PaperCard) -> None:
+    """Render dataset-scoped graph context before flat global fields."""
+
+    if not card.dataset_profiles:
+        return
+
+    st.markdown("**Dataset profiles**")
+    st.dataframe(
+        [
+            {
+                "dataset": profile.dataset.value,
+                "node_types": _values_inline(profile.node_types),
+                "edge_types": _values_inline(profile.edge_types),
+                "target_node": (
+                    profile.target_node_type.value if profile.target_node_type else ""
+                ),
+                "meta_paths": _values_inline(profile.meta_paths),
+                "evaluation_context": _values_inline(profile.evaluation_protocol),
+            }
+            for profile in card.dataset_profiles
+        ],
+        use_container_width=True,
+        hide_index=True,
+    )
+    st.caption(
+        "Dataset profiles are scoped views derived from dataset-specific evidence; "
+        "the flat fields below remain the global extraction set."
+    )
 
 
 def render_card_quality(service: PaperIngestionService, paper_id: str) -> None:
@@ -311,6 +346,13 @@ def render_card_quality(service: PaperIngestionService, paper_id: str) -> None:
                 "cited": field.cited_values_count,
                 "coverage": _percent(field.citation_coverage),
                 "missing": field.missing,
+                "extracted": "; ".join(field.actual_values),
+                "golden_expected": "; ".join(field.expected_values),
+                "golden_matched": "; ".join(field.matched_expected_values),
+                "golden_missing": "; ".join(field.missing_expected_values),
+                "extra_extracted": "; ".join(field.extra_actual_values)
+                if field.expected_values
+                else "",
                 "suspicious": "; ".join(field.suspicious_values),
                 "precision": _optional_percent(field.precision),
                 "recall": _optional_percent(field.recall),
@@ -644,6 +686,10 @@ def _review_values_from_text(text: str, existing_values: list[CitedValue]) -> li
 
 def _values_to_text(values: list[CitedValue]) -> str:
     return "\n".join(value.value for value in values)
+
+
+def _values_inline(values: list[CitedValue]) -> str:
+    return "; ".join(value.value for value in values)
 
 
 def _text_to_values(text: str) -> list[str]:

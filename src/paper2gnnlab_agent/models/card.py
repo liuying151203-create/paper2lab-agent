@@ -15,6 +15,17 @@ class ReproductionDifficulty(BaseModel):
     reasons: list[CitedValue] = Field(default_factory=list)
 
 
+class DatasetProfile(BaseModel):
+    """Dataset-scoped graph and evaluation context."""
+
+    dataset: CitedValue
+    node_types: list[CitedValue] = Field(default_factory=list)
+    edge_types: list[CitedValue] = Field(default_factory=list)
+    target_node_type: CitedValue | None = None
+    meta_paths: list[CitedValue] = Field(default_factory=list)
+    evaluation_protocol: list[CitedValue] = Field(default_factory=list)
+
+
 class PaperCard(BaseModel):
     """Structured GNN paper card with citation-backed fields."""
 
@@ -26,6 +37,7 @@ class PaperCard(BaseModel):
     task_type: list[CitedValue] = Field(default_factory=list)
     graph_type: list[CitedValue] = Field(default_factory=list)
     datasets: list[CitedValue] = Field(default_factory=list)
+    dataset_profiles: list[DatasetProfile] = Field(default_factory=list)
     node_types: list[CitedValue] = Field(default_factory=list)
     edge_types: list[CitedValue] = Field(default_factory=list)
     model_modules: list[CitedValue] = Field(default_factory=list)

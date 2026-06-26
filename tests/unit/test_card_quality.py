@@ -31,7 +31,12 @@ def test_card_quality_reports_completeness_citation_coverage_and_golden_scores()
     assert report.golden_available is True
     assert report.suspicious_values_count == 2
     assert report.macro_recall is not None
-    assert any(field.field == "datasets" and field.recall == 0.667 for field in report.fields)
+    dataset_field = next(field for field in report.fields if field.field == "datasets")
+    assert dataset_field.recall == 0.667
+    assert dataset_field.actual_values == ["ACM", "DBLP"]
+    assert dataset_field.matched_expected_values == ["ACM", "DBLP"]
+    assert dataset_field.missing_expected_values == ["IMDB"]
+    assert dataset_field.extra_actual_values == []
     assert report.warnings
 
 

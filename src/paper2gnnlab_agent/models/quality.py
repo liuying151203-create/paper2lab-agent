@@ -7,6 +7,7 @@ class FieldQuality(BaseModel):
     """Quality signals for one PaperCard field."""
 
     field: str
+    actual_values: list[str] = Field(default_factory=list)
     values_count: int = 0
     cited_values_count: int = 0
     missing: bool = False
@@ -14,6 +15,8 @@ class FieldQuality(BaseModel):
     suspicious_values: list[str] = Field(default_factory=list)
     expected_values: list[str] = Field(default_factory=list)
     matched_expected_values: list[str] = Field(default_factory=list)
+    missing_expected_values: list[str] = Field(default_factory=list)
+    extra_actual_values: list[str] = Field(default_factory=list)
     precision: float | None = None
     recall: float | None = None
 

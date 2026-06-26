@@ -8,7 +8,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Protocol
 
-from paper2gnnlab_agent.models.card import PaperCard, ReproductionDifficulty
+from paper2gnnlab_agent.models.card import DatasetProfile, PaperCard, ReproductionDifficulty
 from paper2gnnlab_agent.models.chunk import Chunk
 from paper2gnnlab_agent.models.common import Citation, CitedValue
 from paper2gnnlab_agent.services.llm import LlmClient, LlmGenerationError
@@ -31,6 +31,10 @@ class RuleBasedPaperCardExtractor:
     def extract(self, paper_id: str, chunks: list[Chunk]) -> PaperCard:
         """Build a citation-backed paper card from available chunks."""
 
+        datasets = _extract_dataset_values(chunks)
+        node_types = _extract_node_types(chunks)
+        edge_types = _extract_edge_types(chunks)
+        evaluation_protocol = _extract_keyword_values(chunks, EVALUATION_PATTERNS)
         return PaperCard(
             paper_id=paper_id,
             extraction_method="rule_based",
@@ -38,9 +42,14 @@ class RuleBasedPaperCardExtractor:
             problem=_extract_problem(chunks),
             task_type=_extract_keyword_values(chunks, TASK_PATTERNS),
             graph_type=_extract_graph_types(chunks),
-            datasets=_extract_dataset_values(chunks),
-            node_types=_extract_node_types(chunks),
-            edge_types=_extract_edge_types(chunks),
+            datasets=datasets,
+            dataset_profiles=_extract_dataset_profiles(
+                chunks=chunks,
+                datasets=datasets,
+                evaluation_protocol=evaluation_protocol,
+            ),
+            node_types=node_types,
+            edge_types=edge_types,
             model_modules=_extract_keyword_values(_ordered_chunks(chunks), MODEL_PATTERNS),
             losses=_extract_keyword_values(chunks, LOSS_PATTERNS),
             attacks=_extract_keyword_values(chunks, ATTACK_PATTERNS),
@@ -48,7 +57,7 @@ class RuleBasedPaperCardExtractor:
             metrics=_extract_keyword_values(chunks, METRIC_PATTERNS),
             baselines=_extract_keyword_values(chunks, BASELINE_PATTERNS),
             training_setup=_extract_training_setup(chunks),
-            evaluation_protocol=_extract_keyword_values(chunks, EVALUATION_PATTERNS),
+            evaluation_protocol=evaluation_protocol,
             main_results=_extract_sentences(chunks, RESULT_TERMS, limit=3),
             limitations=_extract_sentences(chunks, LIMITATION_TERMS, limit=3),
             reproduction_difficulty=_estimate_reproduction_difficulty(chunks),
@@ -137,6 +146,20 @@ def _build_card_prompt(paper_id: str, chunks: list[Chunk]) -> str:
         "task_type": [],
         "graph_type": [],
         "datasets": [],
+        "dataset_profiles": [
+            {
+                "dataset": {
+                    "value": "...",
+                    "confidence": "high|medium|low|unknown",
+                    "citations": [],
+                },
+                "node_types": [],
+                "edge_types": [],
+                "target_node_type": None,
+                "meta_paths": [],
+                "evaluation_protocol": [],
+            }
+        ],
         "node_types": [],
         "edge_types": [],
         "model_modules": [],
@@ -175,10 +198,21 @@ def _paper_card_from_llm_json(
     payload.setdefault("generated_at", datetime.now(UTC).isoformat())
     payload.setdefault("extraction_notes", [])
     payload.setdefault("reproduction_difficulty", {"level": "unknown", "reasons": []})
+    payload.setdefault("dataset_profiles", [])
     for field_name in PAPER_CARD_LIST_FIELDS:
         payload.setdefault(field_name, [])
 
     card = PaperCard.model_validate(payload)
+    if not card.dataset_profiles:
+        card = card.model_copy(
+            update={
+                "dataset_profiles": _extract_dataset_profiles(
+                    chunks=chunks,
+                    datasets=card.datasets,
+                    evaluation_protocol=card.evaluation_protocol,
+                )
+            }
+        )
     known_chunk_ids = {chunk.chunk_id for chunk in chunks}
     _drop_unknown_citations(card, known_chunk_ids)
     return card
@@ -208,6 +242,14 @@ def _drop_unknown_citations(card: PaperCard, known_chunk_ids: set[str]) -> None:
     for field_name in PAPER_CARD_LIST_FIELDS:
         values.extend(getattr(card, field_name))
     values.extend(card.reproduction_difficulty.reasons)
+    for profile in card.dataset_profiles:
+        values.append(profile.dataset)
+        values.extend(profile.node_types)
+        values.extend(profile.edge_types)
+        values.extend(profile.meta_paths)
+        values.extend(profile.evaluation_protocol)
+        if profile.target_node_type is not None:
+            values.append(profile.target_node_type)
     for value in values:
         value.citations = [
             citation for citation in value.citations if citation.chunk_id in known_chunk_ids
@@ -477,6 +519,202 @@ def _extract_edge_types(chunks: list[Chunk]) -> list[CitedValue]:
                 continue
             values.extend(_schema_values_from_match(chunk, relation_text, match.group(0)))
     return _dedupe_values(values)[:16]
+
+
+def _extract_dataset_profiles(
+    chunks: list[Chunk],
+    datasets: list[CitedValue],
+    evaluation_protocol: list[CitedValue],
+) -> list[DatasetProfile]:
+    profiles: list[DatasetProfile] = []
+    for dataset in datasets:
+        related_sentences = _dataset_sentences(chunks, dataset.value)
+        if not related_sentences:
+            profiles.append(DatasetProfile(dataset=dataset))
+            continue
+
+        node_types = _dedupe_values(
+            [
+                value
+                for chunk, sentence in related_sentences
+                for value in _dataset_node_values(
+                    chunk,
+                    _dataset_scoped_segment(sentence, dataset.value),
+                )
+            ]
+        )[:12]
+        edge_types = _dedupe_values(
+            [
+                value
+                for chunk, sentence in related_sentences
+                for value in _dataset_edge_values(
+                    chunk,
+                    _dataset_scoped_segment(sentence, dataset.value),
+                )
+            ]
+        )[:12]
+        meta_paths = _dedupe_values(
+            [
+                value
+                for chunk, sentence in related_sentences
+                for value in _dataset_meta_path_values(chunk, sentence, dataset.value)
+            ]
+        )[:8]
+        target_node_type = _first_dataset_target_node_type(related_sentences, dataset.value)
+        scoped_protocol = _dataset_evaluation_protocol(
+            related_sentences,
+            evaluation_protocol,
+            dataset.value,
+        )
+        profiles.append(
+            DatasetProfile(
+                dataset=dataset,
+                node_types=node_types,
+                edge_types=edge_types,
+                target_node_type=target_node_type,
+                meta_paths=meta_paths,
+                evaluation_protocol=scoped_protocol,
+            )
+        )
+    return profiles
+
+
+def _dataset_sentences(chunks: list[Chunk], dataset_name: str) -> list[tuple[Chunk, str]]:
+    related: list[tuple[Chunk, str]] = []
+    dataset_pattern = re.compile(rf"\b{re.escape(dataset_name)}\b", re.IGNORECASE)
+    for chunk in _dataset_ordered_chunks(chunks):
+        for sentence in _sentences(chunk.text):
+            if dataset_pattern.search(sentence):
+                related.append((chunk, sentence))
+    return related
+
+
+def _dataset_scoped_segment(sentence: str, dataset_name: str) -> str:
+    dataset_match = re.search(rf"\b{re.escape(dataset_name)}\b", sentence, re.IGNORECASE)
+    if dataset_match is None:
+        return sentence
+
+    start = dataset_match.start()
+    end = len(sentence)
+    for other_dataset in DATASET_PATTERNS:
+        if other_dataset.lower() == dataset_name.lower():
+            continue
+        other_match = re.search(
+            rf"\b{re.escape(other_dataset)}\b",
+            sentence[dataset_match.end() :],
+            re.IGNORECASE,
+        )
+        if other_match is not None:
+            end = min(end, dataset_match.end() + other_match.start())
+    return sentence[start:end]
+
+
+def _dataset_node_values(chunk: Chunk, sentence: str) -> list[CitedValue]:
+    values: list[CitedValue] = []
+    for match in re.finditer(r"\{([^{}]+)\}", sentence):
+        values.extend(_schema_values_from_match(chunk, match.group(1), sentence))
+
+    object_match = re.search(
+        r"types of objects\s*\((.+?)\)\s*(?:,?\s+and|\.|$)",
+        sentence,
+        re.IGNORECASE,
+    )
+    if object_match:
+        values.extend(_schema_values_from_match(chunk, object_match.group(1), sentence))
+
+    typed_match = re.search(
+        r"(?:node types?|types of nodes?)\s*(?:are|include|:|=)\s*([^.;]+)",
+        sentence,
+        re.IGNORECASE,
+    )
+    if typed_match:
+        values.extend(_schema_values_from_match(chunk, typed_match.group(1), sentence))
+    return values
+
+
+def _dataset_edge_values(chunk: Chunk, sentence: str) -> list[CitedValue]:
+    values: list[CitedValue] = []
+    for match in re.finditer(r"relations?\s*\(([^)]+)\)", sentence, re.IGNORECASE):
+        values.extend(_schema_values_from_match(chunk, match.group(1), sentence))
+    edge_match = re.search(
+        r"edge types?\s*(?:are|include|:|=)\s*([^.;]+)",
+        sentence,
+        re.IGNORECASE,
+    )
+    if edge_match:
+        values.extend(_schema_values_from_match(chunk, edge_match.group(1), sentence))
+    return values
+
+
+def _dataset_meta_path_values(
+    chunk: Chunk,
+    sentence: str,
+    dataset_name: str,
+) -> list[CitedValue]:
+    values: list[CitedValue] = []
+    pattern = re.compile(
+        rf"\b{re.escape(dataset_name)}\b\s+meta-?paths?\s*[=:]\s*([^.;]+)",
+        re.IGNORECASE,
+    )
+    match = pattern.search(sentence)
+    if match:
+        for raw_value in re.split(r",| and |/", match.group(1)):
+            value = raw_value.strip(" .;:()[]")
+            if value:
+                values.append(
+                    CitedValue(
+                        value=value,
+                        citations=[_citation_with_evidence(chunk, sentence)],
+                        confidence="medium",
+                    )
+                )
+    return values
+
+
+def _first_dataset_target_node_type(
+    related_sentences: list[tuple[Chunk, str]],
+    dataset_name: str,
+) -> CitedValue | None:
+    pattern = re.compile(
+        rf"\b{re.escape(dataset_name)}\b\s+target nodes?\s*[=:]\s*([A-Za-z][A-Za-z0-9_-]+)",
+        re.IGNORECASE,
+    )
+    for chunk, sentence in related_sentences:
+        match = pattern.search(sentence)
+        if match:
+            return CitedValue(
+                value=match.group(1),
+                citations=[_citation_with_evidence(chunk, sentence)],
+                confidence="medium",
+            )
+    return None
+
+
+def _dataset_evaluation_protocol(
+    related_sentences: list[tuple[Chunk, str]],
+    evaluation_protocol: list[CitedValue],
+    dataset_name: str,
+) -> list[CitedValue]:
+    protocol = [
+        value
+        for value in evaluation_protocol
+        if _cited_value_mentions_dataset(value, dataset_name)
+    ]
+    for chunk, sentence in related_sentences:
+        if re.search(r"\b(train|validation|test|split|class|meta-?path|target)\b", sentence, re.I):
+            protocol.append(
+                CitedValue(
+                    value=sentence,
+                    citations=[_citation_with_evidence(chunk, sentence)],
+                    confidence="low",
+                )
+            )
+    return _dedupe_values(protocol)[:8]
+
+
+def _cited_value_mentions_dataset(value: CitedValue, dataset_name: str) -> bool:
+    pattern = re.compile(rf"\b{re.escape(dataset_name)}\b", re.IGNORECASE)
+    return any(pattern.search(citation.evidence_text) for citation in value.citations)
 
 
 def _schema_values_from_match(
