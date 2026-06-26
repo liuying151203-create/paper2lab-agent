@@ -196,7 +196,7 @@ def _paper_card_from_llm_json(
     chunks: list[Chunk],
 ) -> PaperCard:
     payload = _extract_json_object(response)
-    _normalize_llm_payload_shapes(payload)
+    _normalize_llm_payload_shapes(payload, paper_id=paper_id)
     payload["paper_id"] = paper_id
     payload["extraction_method"] = "llm"
     payload.setdefault("generated_at", datetime.now(UTC).isoformat())
@@ -222,19 +222,26 @@ def _paper_card_from_llm_json(
     return card
 
 
-def _normalize_llm_payload_shapes(payload: dict[str, object]) -> None:
+def _normalize_llm_payload_shapes(payload: dict[str, object], paper_id: str) -> None:
     """Coerce common LLM shorthand into strict PaperCard schema shapes."""
 
     for field_name in OPTIONAL_CITED_VALUE_FIELDS:
-        if isinstance(payload.get(field_name), str):
-            payload[field_name] = _raw_to_cited_value(payload[field_name])
+        if payload.get(field_name) is not None:
+            payload[field_name] = _raw_to_cited_value(payload[field_name], paper_id=paper_id)
 
     for field_name in PAPER_CARD_LIST_FIELDS:
-        payload[field_name] = _coerce_cited_value_list(payload.get(field_name, []))
+        payload[field_name] = _coerce_cited_value_list(
+            payload.get(field_name, []),
+            paper_id=paper_id,
+        )
 
     difficulty = payload.get("reproduction_difficulty")
     if isinstance(difficulty, dict):
-        difficulty["reasons"] = _coerce_cited_value_list(difficulty.get("reasons", []))
+        difficulty["level"] = _normalize_difficulty_level(difficulty.get("level"))
+        difficulty["reasons"] = _coerce_cited_value_list(
+            difficulty.get("reasons", []),
+            paper_id=paper_id,
+        )
 
     dataset_profiles = payload.get("dataset_profiles")
     if not isinstance(dataset_profiles, list):
@@ -246,40 +253,164 @@ def _normalize_llm_payload_shapes(payload: dict[str, object]) -> None:
         if not isinstance(profile, dict):
             continue
         normalized = dict(profile)
-        normalized["dataset"] = _raw_to_cited_value(normalized.get("dataset", "unknown"))
-        normalized["node_types"] = _coerce_cited_value_list(normalized.get("node_types", []))
-        normalized["edge_types"] = _coerce_cited_value_list(normalized.get("edge_types", []))
-        normalized["meta_paths"] = _coerce_cited_value_list(normalized.get("meta_paths", []))
+        normalized["dataset"] = _raw_to_cited_value(
+            normalized.get("dataset", "unknown"),
+            paper_id=paper_id,
+        )
+        normalized["node_types"] = _coerce_cited_value_list(
+            normalized.get("node_types", []),
+            paper_id=paper_id,
+        )
+        normalized["edge_types"] = _coerce_cited_value_list(
+            normalized.get("edge_types", []),
+            paper_id=paper_id,
+        )
+        normalized["meta_paths"] = _coerce_cited_value_list(
+            normalized.get("meta_paths", []),
+            paper_id=paper_id,
+        )
         normalized["evaluation_protocol"] = _coerce_cited_value_list(
-            normalized.get("evaluation_protocol", [])
+            normalized.get("evaluation_protocol", []),
+            paper_id=paper_id,
         )
         if normalized.get("target_node_type") is not None:
             normalized["target_node_type"] = _raw_to_cited_value(
-                normalized["target_node_type"]
+                normalized["target_node_type"],
+                paper_id=paper_id,
             )
         normalized_profiles.append(normalized)
     payload["dataset_profiles"] = normalized_profiles
 
 
-def _coerce_cited_value_list(raw_values: object) -> list[object]:
+def _coerce_cited_value_list(raw_values: object, paper_id: str) -> list[object]:
     if raw_values is None:
         return []
     if not isinstance(raw_values, list):
         raw_values = [raw_values]
-    return [_raw_to_cited_value(value) for value in raw_values if value not in ("", None)]
+    return [
+        _raw_to_cited_value(value, paper_id=paper_id)
+        for value in raw_values
+        if value not in ("", None)
+    ]
 
 
-def _raw_to_cited_value(raw_value: object) -> object:
+def _raw_to_cited_value(raw_value: object, paper_id: str) -> object:
     if isinstance(raw_value, dict):
         normalized = dict(raw_value)
-        normalized.setdefault("confidence", "unknown")
-        normalized.setdefault("citations", [])
+        normalized["value"] = _string_value(
+            normalized.get("value")
+            or normalized.get("name")
+            or normalized.get("label")
+            or normalized.get("text")
+            or normalized.get("description")
+            or normalized.get("detail")
+            or "unknown"
+        )
+        normalized["confidence"] = _normalize_confidence(normalized.get("confidence"))
+        normalized["citations"] = _coerce_citation_list(
+            normalized.get("citations", []),
+            paper_id=paper_id,
+        )
         return normalized
     return {
         "value": str(raw_value),
         "confidence": "unknown",
         "citations": [],
     }
+
+
+def _coerce_citation_list(raw_citations: object, paper_id: str) -> list[dict[str, object]]:
+    if raw_citations is None:
+        return []
+    if isinstance(raw_citations, dict):
+        raw_citations = [raw_citations]
+    if not isinstance(raw_citations, list):
+        return []
+
+    citations: list[dict[str, object]] = []
+    for raw_citation in raw_citations:
+        citation = _raw_to_citation(raw_citation, paper_id=paper_id)
+        if citation is not None:
+            citations.append(citation)
+    return citations
+
+
+def _raw_to_citation(raw_citation: object, paper_id: str) -> dict[str, object] | None:
+    if isinstance(raw_citation, str):
+        return None
+    if not isinstance(raw_citation, dict):
+        return None
+
+    chunk_id = _string_value(
+        raw_citation.get("chunk_id")
+        or raw_citation.get("chunk")
+        or raw_citation.get("id")
+        or ""
+    )
+    if not chunk_id:
+        return None
+
+    return {
+        "paper_id": _string_value(raw_citation.get("paper_id") or paper_id),
+        "chunk_id": chunk_id,
+        "page": _optional_int(raw_citation.get("page") or raw_citation.get("page_start")),
+        "section": _optional_string(raw_citation.get("section")),
+        "evidence_text": _string_value(
+            raw_citation.get("evidence_text")
+            or raw_citation.get("evidence")
+            or raw_citation.get("text")
+            or raw_citation.get("content")
+            or raw_citation.get("snippet")
+            or raw_citation.get("quote")
+            or ""
+        ),
+    }
+
+
+def _normalize_confidence(raw_confidence: object) -> str:
+    value = _string_value(raw_confidence).lower().replace("_", "-").strip()
+    if value in {"high", "medium", "low", "unknown"}:
+        return value
+    if value in {"moderate", "medium-high", "medium-low"}:
+        return "medium"
+    if value in {"certain", "strong", "sure"}:
+        return "high"
+    if value in {"weak", "uncertain"}:
+        return "low"
+    return "unknown"
+
+
+def _normalize_difficulty_level(raw_level: object) -> str:
+    value = _string_value(raw_level).lower().replace("_", "-").strip()
+    if value in {"low", "medium", "high", "unknown"}:
+        return value
+    if value in {"moderate", "medium-high", "medium-low"}:
+        return "medium"
+    if value in {"easy", "simple"}:
+        return "low"
+    if value in {"hard", "difficult", "complex"}:
+        return "high"
+    return "unknown"
+
+
+def _optional_int(raw_value: object) -> int | None:
+    if raw_value is None:
+        return None
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _optional_string(raw_value: object) -> str | None:
+    value = _string_value(raw_value).strip()
+    return value or None
+
+
+def _string_value(raw_value: object) -> str:
+    if raw_value is None:
+        return ""
+    return str(raw_value)
 
 
 def _extract_json_object(text: str) -> dict[str, object]:

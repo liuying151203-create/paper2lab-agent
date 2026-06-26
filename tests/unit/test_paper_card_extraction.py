@@ -228,6 +228,29 @@ def test_llm_json_extraction_sanitizes_raw_control_chars_in_strings() -> None:
     assert payload["main_results"][0]["value"] == "Feature importance   copied from PDF"
 
 
+def test_llm_card_extractor_normalizes_loose_draft_shapes() -> None:
+    paper_id = "paper_card123"
+    chunks = [
+        make_chunk(
+            paper_id,
+            "chunk_card123_0001",
+            1,
+            "abstract",
+            "We study node classification on Cora with a GCN model.",
+        )
+    ]
+
+    card = LlmPaperCardExtractor(LooseDraftCardLlmClient()).extract(paper_id, chunks)
+
+    assert card.extraction_method == "llm"
+    assert card.task_type[0].value == "node classification"
+    assert card.task_type[0].confidence == "high"
+    assert card.task_type[0].citations[0].evidence_text == "Node classification evidence."
+    assert card.reproduction_difficulty.level == "medium"
+    assert card.dataset_profiles[0].target_node_type.value == "Paper"
+    assert card.dataset_profiles[0].target_node_type.confidence == "medium"
+
+
 def make_chunk(
     paper_id: str,
     chunk_id: str,
@@ -312,3 +335,37 @@ class FakeCardLlmClient:
 class BrokenCardLlmClient:
     def generate(self, messages: list[dict[str, str]], temperature: float = 0.0) -> str:
         return "not json"
+
+
+class LooseDraftCardLlmClient:
+    def generate(self, messages: list[dict[str, str]], temperature: float = 0.0) -> str:
+        return """
+        {
+          "task_type": [
+            {
+              "name": "node classification",
+              "confidence": "certain",
+              "citations": [
+                {
+                  "chunk": "chunk_card123_0001",
+                  "page_start": "1",
+                  "section": "abstract",
+                  "evidence": "Node classification evidence."
+                }
+              ]
+            }
+          ],
+          "datasets": ["Cora"],
+          "dataset_profiles": [
+            {
+              "dataset": {"name": "Cora", "confidence": "medium-high"},
+              "node_types": [{"label": "Paper", "confidence": "certain"}],
+              "edge_types": ["Paper-Author"],
+              "target_node_type": {"label": "Paper", "confidence": "moderate"},
+              "meta_paths": ["PAP"],
+              "evaluation_protocol": ["standard split"]
+            }
+          ],
+          "reproduction_difficulty": {"level": "moderate", "reasons": ["split details"]}
+        }
+        """
