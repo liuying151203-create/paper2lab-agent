@@ -3,7 +3,7 @@ from typing import Any
 
 from paper2gnnlab_agent.models.chunk import Chunk
 from paper2gnnlab_agent.models.common import Citation
-from paper2gnnlab_agent.services.evidence import GraphRagEvidenceProvider
+from paper2gnnlab_agent.services.evidence import GraphRagEvidenceProvider, search_terms_for_question
 from paper2gnnlab_agent.services.papers import build_qa_service_from_settings
 from paper2gnnlab_agent.services.qa import ChunkQAService, LlmAnswerComposer
 
@@ -77,6 +77,37 @@ def test_chunk_qa_can_compose_answer_with_llm_client() -> None:
 
     assert response.answer == "The paper evaluates on Cora and Citeseer. [1]"
     assert response.citations[0].chunk_id == "chunk_qa123_0001"
+
+
+def test_chunk_qa_supports_common_chinese_research_questions() -> None:
+    paper_id = "paper_qa123"
+
+    response = ChunkQAService().answer(
+        paper_id=paper_id,
+        question="这篇论文用了哪些数据集和指标？",
+        chunks=[
+            make_chunk(
+                paper_id,
+                "chunk_qa123_0001",
+                1,
+                "experiments",
+                "Experiments evaluate ACM and DBLP using Micro-F1 and Macro-F1.",
+            )
+        ],
+    )
+
+    assert response.unsupported_claims == []
+    assert response.citations[0].chunk_id == "chunk_qa123_0001"
+    assert "ACM and DBLP" in response.answer
+
+
+def test_search_terms_for_question_expands_chinese_keywords() -> None:
+    terms = search_terms_for_question("模型的攻击和防御指标是什么？")
+
+    assert "model" in terms
+    assert "attack" in terms
+    assert "defense" in terms
+    assert "metrics" in terms
 
 
 def test_chunk_qa_can_use_custom_evidence_provider() -> None:

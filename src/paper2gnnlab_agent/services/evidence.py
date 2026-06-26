@@ -48,7 +48,9 @@ class LocalChunkEvidenceProvider:
 def search_terms_for_question(question: str) -> list[str]:
     """Return normalized searchable terms used by local evidence retrieval."""
 
-    return _expand_query_terms(_tokenize(question))
+    terms = _expand_query_terms(_tokenize(question))
+    terms.extend(_chinese_query_expansions(question))
+    return _dedupe_terms(terms)
 
 
 class GraphRagEvidenceProvider:
@@ -261,6 +263,26 @@ def _expand_query_terms(query_terms: list[str]) -> list[str]:
     return expanded
 
 
+def _chinese_query_expansions(question: str) -> list[str]:
+    expanded: list[str] = []
+    normalized = question.lower()
+    for keyword, terms in CHINESE_QUERY_EXPANSIONS.items():
+        if keyword in normalized:
+            expanded.extend(terms)
+    return expanded
+
+
+def _dedupe_terms(terms: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for term in terms:
+        if term in seen:
+            continue
+        seen.add(term)
+        deduped.append(term)
+    return deduped
+
+
 def _compact(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
@@ -274,6 +296,30 @@ QUERY_EXPANSIONS = {
     "baselines": ["baseline", "compare", "comparison"],
     "model": ["gcn", "gat", "graphsage", "gin", "encoder"],
     "task": ["classification", "prediction", "recommendation"],
+}
+
+
+CHINESE_QUERY_EXPANSIONS = {
+    "数据集": ["dataset", "datasets", "data", "cora", "citeseer", "pubmed", "acm", "dblp", "imdb"],
+    "数据": ["dataset", "datasets", "data"],
+    "指标": ["metric", "metrics", "accuracy", "f1", "auc", "nmi", "ari", "micro-f1", "macro-f1"],
+    "评价": ["evaluation", "metric", "metrics", "accuracy", "f1"],
+    "评估": ["evaluation", "metric", "metrics", "accuracy", "f1"],
+    "模型": ["model", "gcn", "gat", "han", "magnn", "gtn", "encoder"],
+    "方法": ["method", "model", "framework"],
+    "任务": ["task", "classification", "clustering", "prediction"],
+    "图": ["graph", "heterogeneous", "homogeneous", "network"],
+    "节点": ["node", "nodes", "author", "paper", "movie"],
+    "边": ["edge", "edges", "relation", "relations"],
+    "攻击": ["attack", "attacks", "adversarial", "perturbation"],
+    "防御": ["defense", "defenses", "robust", "robustness", "purifier"],
+    "基线": ["baseline", "baselines", "compare", "comparison"],
+    "对比": ["baseline", "baselines", "compare", "comparison"],
+    "训练": ["training", "optimizer", "learning", "epoch", "dropout"],
+    "优化器": ["optimizer", "adam", "sgd"],
+    "学习率": ["learning", "rate", "lr"],
+    "结果": ["result", "results", "performance", "outperform"],
+    "限制": ["limitation", "limitations", "future", "overfitting"],
 }
 
 

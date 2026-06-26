@@ -24,7 +24,9 @@ from paper2gnnlab_agent.services.papers import (
     PaperIngestionService,
     PaperNotFoundError,
     ParsedArtifactNotFoundError,
+    build_card_extractor_from_settings,
     build_paper_service,
+    build_qa_service_from_settings,
 )
 from paper2gnnlab_agent.storage.paper_repository import PaperRepository
 from paper2gnnlab_agent.storage.paths import build_storage_paths
@@ -63,6 +65,22 @@ def get_ui_service() -> PaperIngestionService:
     return build_paper_service(
         repository=repository,
         paths=paths,
+        card_extractor=build_card_extractor_from_settings(
+            model_provider=settings.model_provider,
+            model_name=settings.model_name,
+            model_base_url=settings.model_base_url,
+            api_key=settings.api_key,
+        ),
+        qa_service=build_qa_service_from_settings(
+            model_provider=settings.model_provider,
+            model_name=settings.model_name,
+            model_base_url=settings.model_base_url,
+            api_key=settings.api_key,
+            evidence_provider=settings.evidence_provider,
+            graphrag_base_url=settings.graphrag_base_url,
+            graphrag_endpoint=settings.graphrag_endpoint,
+            graphrag_timeout_seconds=settings.graphrag_timeout_seconds,
+        ),
     )
 
 
@@ -113,7 +131,9 @@ def render_runtime(settings: Settings) -> None:
         f"sqlite: {settings.sqlite_path}"
     )
     model_status = (
-        "LLM card + QA on" if settings.model_provider and settings.api_key else "rule/extractive"
+        "LLM card + QA on"
+        if settings.model_provider and settings.model_name and settings.api_key
+        else "rule/extractive"
     )
     st.caption(f"mode: {model_status}")
 
