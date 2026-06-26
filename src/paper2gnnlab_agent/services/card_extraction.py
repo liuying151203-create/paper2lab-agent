@@ -122,7 +122,7 @@ class LlmPaperCardExtractor:
                 update={
                     "extraction_notes": [
                         f"LLM extraction failed; used {self.fallback.name} fallback: "
-                        f"{type(exc).__name__}."
+                        f"{_exception_summary(exc)}."
                     ],
                 }
             )
@@ -179,6 +179,9 @@ def _build_card_prompt(paper_id: str, chunks: list[Chunk]) -> str:
         "Extract a GNN-specific PaperCard JSON.\n"
         "Use CitedValue objects shaped as "
         '{"value": "...", "confidence": "high|medium|low|unknown", "citations": [...]}.\n'
+        "Do not use bare strings inside any PaperCard list, including dataset_profiles. "
+        "Every dataset_profiles node_types, edge_types, meta_paths, evaluation_protocol, "
+        "and target_node_type entry must be a CitedValue object.\n"
         "Use only citation objects copied from the evidence block.\n"
         "If evidence is missing, leave the field empty or use confidence='unknown'.\n"
         f"JSON shape:\n{json.dumps(schema_hint, ensure_ascii=False, indent=2)}\n\n"
@@ -193,6 +196,7 @@ def _paper_card_from_llm_json(
     chunks: list[Chunk],
 ) -> PaperCard:
     payload = _extract_json_object(response)
+    _normalize_llm_payload_shapes(payload)
     payload["paper_id"] = paper_id
     payload["extraction_method"] = "llm"
     payload.setdefault("generated_at", datetime.now(UTC).isoformat())
@@ -216,6 +220,66 @@ def _paper_card_from_llm_json(
     known_chunk_ids = {chunk.chunk_id for chunk in chunks}
     _drop_unknown_citations(card, known_chunk_ids)
     return card
+
+
+def _normalize_llm_payload_shapes(payload: dict[str, object]) -> None:
+    """Coerce common LLM shorthand into strict PaperCard schema shapes."""
+
+    for field_name in OPTIONAL_CITED_VALUE_FIELDS:
+        if isinstance(payload.get(field_name), str):
+            payload[field_name] = _raw_to_cited_value(payload[field_name])
+
+    for field_name in PAPER_CARD_LIST_FIELDS:
+        payload[field_name] = _coerce_cited_value_list(payload.get(field_name, []))
+
+    difficulty = payload.get("reproduction_difficulty")
+    if isinstance(difficulty, dict):
+        difficulty["reasons"] = _coerce_cited_value_list(difficulty.get("reasons", []))
+
+    dataset_profiles = payload.get("dataset_profiles")
+    if not isinstance(dataset_profiles, list):
+        payload["dataset_profiles"] = []
+        return
+
+    normalized_profiles: list[dict[str, object]] = []
+    for profile in dataset_profiles:
+        if not isinstance(profile, dict):
+            continue
+        normalized = dict(profile)
+        normalized["dataset"] = _raw_to_cited_value(normalized.get("dataset", "unknown"))
+        normalized["node_types"] = _coerce_cited_value_list(normalized.get("node_types", []))
+        normalized["edge_types"] = _coerce_cited_value_list(normalized.get("edge_types", []))
+        normalized["meta_paths"] = _coerce_cited_value_list(normalized.get("meta_paths", []))
+        normalized["evaluation_protocol"] = _coerce_cited_value_list(
+            normalized.get("evaluation_protocol", [])
+        )
+        if normalized.get("target_node_type") is not None:
+            normalized["target_node_type"] = _raw_to_cited_value(
+                normalized["target_node_type"]
+            )
+        normalized_profiles.append(normalized)
+    payload["dataset_profiles"] = normalized_profiles
+
+
+def _coerce_cited_value_list(raw_values: object) -> list[object]:
+    if raw_values is None:
+        return []
+    if not isinstance(raw_values, list):
+        raw_values = [raw_values]
+    return [_raw_to_cited_value(value) for value in raw_values if value not in ("", None)]
+
+
+def _raw_to_cited_value(raw_value: object) -> object:
+    if isinstance(raw_value, dict):
+        normalized = dict(raw_value)
+        normalized.setdefault("confidence", "unknown")
+        normalized.setdefault("citations", [])
+        return normalized
+    return {
+        "value": str(raw_value),
+        "confidence": "unknown",
+        "citations": [],
+    }
 
 
 def _extract_json_object(text: str) -> dict[str, object]:
@@ -274,6 +338,9 @@ PAPER_CARD_LIST_FIELDS = [
     "limitations",
     "missing_implementation_details",
 ]
+
+
+OPTIONAL_CITED_VALUE_FIELDS = {"title", "problem"}
 
 
 TASK_PATTERNS = {
@@ -958,3 +1025,8 @@ def _dedupe_values(values: list[CitedValue]) -> list[CitedValue]:
 
 def _compact(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
+
+
+def _exception_summary(exc: Exception) -> str:
+    message = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
+    return f"{type(exc).__name__}: {message[:180]}"

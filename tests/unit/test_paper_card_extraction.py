@@ -187,6 +187,12 @@ def test_llm_card_extractor_validates_structured_json_with_citations() -> None:
     assert card.task_type[0].value == "node classification"
     assert card.datasets[0].value == "Cora"
     assert card.datasets[0].citations[0].chunk_id == "chunk_card123_0001"
+    assert card.dataset_profiles[0].dataset.value == "Cora"
+    assert [value.value for value in card.dataset_profiles[0].node_types] == [
+        "Paper",
+        "Author",
+    ]
+    assert card.dataset_profiles[0].target_node_type.value == "Paper"
 
 
 def test_llm_card_extractor_falls_back_on_invalid_json() -> None:
@@ -272,6 +278,16 @@ class FakeCardLlmClient:
                   "evidence_text": "We study node classification on Cora with a GCN model."
                 }
               ]
+            }
+          ],
+          "dataset_profiles": [
+            {
+              "dataset": "Cora",
+              "node_types": ["Paper", "Author"],
+              "edge_types": ["Paper-Author"],
+              "target_node_type": "Paper",
+              "meta_paths": ["PAP"],
+              "evaluation_protocol": ["Cora split is used for node classification."]
             }
           ],
           "reproduction_difficulty": {"level": "unknown", "reasons": []}
