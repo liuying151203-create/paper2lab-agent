@@ -76,6 +76,8 @@ def test_chunk_qa_can_compose_answer_with_llm_client() -> None:
     )
 
     assert response.answer == "The paper evaluates on Cora and Citeseer. [1]"
+    assert response.evidence_provider == "local_chunks"
+    assert response.answer_mode == "llm"
     assert response.citations[0].chunk_id == "chunk_qa123_0001"
 
 
@@ -97,6 +99,8 @@ def test_chunk_qa_supports_common_chinese_research_questions() -> None:
     )
 
     assert response.unsupported_claims == []
+    assert response.evidence_provider == "local_chunks"
+    assert response.answer_mode == "extractive"
     assert response.citations[0].chunk_id == "chunk_qa123_0001"
     assert "ACM and DBLP" in response.answer
 

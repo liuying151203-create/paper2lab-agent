@@ -40,6 +40,8 @@ class ChunkQAService:
                     "No chunks are available for this paper, "
                     "so the question cannot be answered."
                 ),
+                evidence_provider=_evidence_provider_name(self.evidence_provider),
+                answer_mode="unsupported",
                 unsupported_claims=["No chunk evidence is available for this paper."],
             )
         if not query_terms:
@@ -47,6 +49,8 @@ class ChunkQAService:
                 paper_id=paper_id,
                 question=question,
                 answer="The question does not contain searchable terms.",
+                evidence_provider=_evidence_provider_name(self.evidence_provider),
+                answer_mode="unsupported",
                 unsupported_claims=["Question has no searchable terms."],
             )
 
@@ -64,6 +68,8 @@ class ChunkQAService:
                     "I could not find enough evidence in this paper's chunks "
                     "to answer the question."
                 ),
+                evidence_provider=_evidence_provider_name(self.evidence_provider),
+                answer_mode="unsupported",
                 unsupported_claims=["No chunk matched the question terms."],
             )
 
@@ -72,6 +78,8 @@ class ChunkQAService:
             paper_id=paper_id,
             question=question,
             answer=answer,
+            evidence_provider=_evidence_provider_name(self.evidence_provider),
+            answer_mode=_answer_mode(self.answer_composer),
             citations=citations,
             unsupported_claims=[],
         )
@@ -80,12 +88,16 @@ class ChunkQAService:
 class AnswerComposer:
     """Compose an answer from already selected citation evidence."""
 
+    name = "unknown"
+
     def compose(self, question: str, citations: list[Citation]) -> str:
         raise NotImplementedError
 
 
 class ExtractiveAnswerComposer(AnswerComposer):
     """Return a conservative evidence-only answer without model calls."""
+
+    name = "extractive"
 
     def compose(self, question: str, citations: list[Citation]) -> str:
         evidence_summary = " ".join(
@@ -101,9 +113,12 @@ class ExtractiveAnswerComposer(AnswerComposer):
 class LlmAnswerComposer(AnswerComposer):
     """Use an LLM to write a concise answer constrained by citation evidence."""
 
+    name = "llm"
+
     def __init__(self, client: LlmClient, fallback: AnswerComposer | None = None) -> None:
         self.client = client
         self.fallback = fallback or ExtractiveAnswerComposer()
+        self.last_mode = self.name
 
     def compose(self, question: str, citations: list[Citation]) -> str:
         messages = [
@@ -124,8 +139,11 @@ class LlmAnswerComposer(AnswerComposer):
             },
         ]
         try:
-            return self.client.generate(messages=messages, temperature=0.0)
+            answer = self.client.generate(messages=messages, temperature=0.0)
+            self.last_mode = self.name
+            return answer
         except LlmGenerationError:
+            self.last_mode = f"{self.fallback.name}_fallback"
             return self.fallback.compose(question=question, citations=citations)
 
 
@@ -139,3 +157,11 @@ def _build_qa_prompt(question: str, citations: list[Citation]) -> str:
         for index, citation in enumerate(citations, start=1)
     )
     return f"Question: {question}\n\nCitation evidence:\n{evidence}\n\nAnswer:"
+
+
+def _evidence_provider_name(provider: EvidenceProvider) -> str:
+    return str(getattr(provider, "name", provider.__class__.__name__))
+
+
+def _answer_mode(composer: AnswerComposer) -> str:
+    return str(getattr(composer, "last_mode", getattr(composer, "name", "unknown")))

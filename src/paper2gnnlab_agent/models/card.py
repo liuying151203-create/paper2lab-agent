@@ -19,6 +19,8 @@ class PaperCard(BaseModel):
     """Structured GNN paper card with citation-backed fields."""
 
     paper_id: str
+    extraction_method: Literal["rule_based", "llm", "reviewed", "unknown"] = "unknown"
+    extraction_notes: list[str] = Field(default_factory=list)
     title: CitedValue | None = None
     problem: CitedValue | None = None
     task_type: list[CitedValue] = Field(default_factory=list)

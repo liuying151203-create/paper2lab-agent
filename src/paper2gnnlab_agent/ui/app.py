@@ -214,7 +214,8 @@ def render_pipeline(service: PaperIngestionService, paper_id: str) -> None:
             run_action(
                 lambda: service.generate_paper_card(paper_id, force=force),
                 success=lambda response: st.success(
-                    f"{'Reused' if response.reused else 'Generated'} PaperCard"
+                    f"{'Reused' if response.reused else 'Generated'} PaperCard "
+                    f"({response.card.extraction_method})"
                 ),
             )
 
@@ -243,6 +244,10 @@ def render_card_panel(service: PaperIngestionService, paper_id: str) -> None:
 
 def render_card(card: PaperCard) -> None:
     """Render core PaperCard fields with citations."""
+
+    st.caption(f"extraction: {card.extraction_method}")
+    for note in card.extraction_notes:
+        st.info(note)
 
     if card.problem:
         render_cited_value("Problem", card.problem)
@@ -404,6 +409,10 @@ def render_qa_panel(service: PaperIngestionService, paper_id: str) -> None:
     response = st.session_state.get("last_qa")
     if response and response.get("paper_id") == paper_id:
         st.markdown("**Answer**")
+        st.caption(
+            f"evidence: {response.get('evidence_provider', 'unknown')} | "
+            f"answer: {response.get('answer_mode', 'unknown')}"
+        )
         st.write(response["answer"])
         if response["unsupported_claims"]:
             st.warning("; ".join(response["unsupported_claims"]))

@@ -359,6 +359,15 @@ class PaperIngestionService:
             raise PaperNotFoundError(paper_id)
         if card.paper_id != paper_id:
             card = card.model_copy(update={"paper_id": paper_id})
+        card = card.model_copy(
+            update={
+                "extraction_method": "reviewed",
+                "extraction_notes": [
+                    *card.extraction_notes,
+                    "Saved from manual review UI.",
+                ],
+            }
+        )
 
         reviewed_path = self._reviewed_card_path(paper_id)
         self.paths.cards_dir.mkdir(parents=True, exist_ok=True)

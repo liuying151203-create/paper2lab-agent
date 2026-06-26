@@ -16,5 +16,7 @@ class PaperQAResponse(BaseModel):
     paper_id: str
     question: str
     answer: str
+    evidence_provider: str = "unknown"
+    answer_mode: str = "unknown"
     citations: list[Citation] = Field(default_factory=list)
     unsupported_claims: list[str] = Field(default_factory=list)

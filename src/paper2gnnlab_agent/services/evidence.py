@@ -29,6 +29,8 @@ class EvidenceProvider(Protocol):
 class LocalChunkEvidenceProvider:
     """Retrieve evidence from already persisted local chunks."""
 
+    name = "local_chunks"
+
     def retrieve(
         self,
         paper_id: str,
@@ -55,6 +57,8 @@ def search_terms_for_question(question: str) -> list[str]:
 
 class GraphRagEvidenceProvider:
     """Retrieve evidence from an external GraphRAG service with local fallback."""
+
+    name = "graphrag"
 
     def __init__(
         self,
